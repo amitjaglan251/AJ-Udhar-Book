@@ -230,7 +230,9 @@ fun AJNavGraph(
                                         Screen.Login.route
                                     ) {
 
-                                        popUpTo(0) {
+                                        popUpTo(
+                                            Screen.Dashboard.route
+                                        ) {
                                             inclusive = true
                                         }
 
@@ -250,7 +252,9 @@ fun AJNavGraph(
                                 Screen.Login.route
                             ) {
 
-                                popUpTo(0) {
+                                popUpTo(
+                                    Screen.Dashboard.route
+                                ) {
                                     inclusive = true
                                 }
 
@@ -674,7 +678,7 @@ fun AJNavGraph(
                     ?.getString(
                         "type"
                     )
-                    ?: "UDHAR"
+                    ?: "UDHAAR"
 
 
             // ==================================================
