@@ -12,28 +12,7 @@
           "package_name": "com.aj.udharbook"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "266796568068-cs6r5t9h7ljqk859i8haf4dn4hcsqrak.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.aj.udharbook",
-            "certificate_hash": "79219d128d61d366ae9ee70ad3090bba75eea8a2"
-          }
-        },
-        {
-          "client_id": "266796568068-oupmid6e0q8mbiga8ttlss73fc15trts.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.aj.udharbook",
-            "certificate_hash": "37ba3c67ed11fe6aeedfcc7c6813801ee0738e6d"
-          }
-        },
-        {
-          "client_id": "266796568068-me0knh7ojfbaautm7qfgdslqk6ulv85a.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
           "current_key": "AIzaSyBM-63Bk_po4o5NWZsR5HRBTkE2RGK-py4"
@@ -41,12 +20,7 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "266796568068-me0knh7ojfbaautm7qfgdslqk6ulv85a.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     }
