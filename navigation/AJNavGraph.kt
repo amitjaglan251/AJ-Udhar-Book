@@ -1,0 +1,1 @@
+// No safe update: repository path could not be verified from current GitHub tree.
