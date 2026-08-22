@@ -45,13 +45,6 @@ interface TransactionDao {
     )
     suspend fun getAllTransactionsOnce(): List<Transaction>
 
-    // ==================================================
-    // GET CUSTOMER BALANCE
-    //
-    // UDhar = PLUS
-    // Payment = MINUS
-    // ==================================================
-
     @Query(
         """
         SELECT COALESCE(
@@ -71,6 +64,9 @@ interface TransactionDao {
     suspend fun getCustomerBalance(
         customerId: Int
     ): Double
+
+    @Query("DELETE FROM transactions WHERE id = :transactionId")
+    suspend fun deleteById(transactionId: Int)
 
     @Query("DELETE FROM transactions")
     suspend fun deleteAll()

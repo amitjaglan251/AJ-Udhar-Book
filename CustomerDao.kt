@@ -33,6 +33,9 @@ interface CustomerDao {
     @Query("SELECT * FROM customers WHERE id = :customerId LIMIT 1")
     suspend fun getCustomerByIdOnce(customerId: Int): Customer?
 
+    @Query("SELECT * FROM customers WHERE mobile = :mobile LIMIT 1")
+    suspend fun getCustomerByMobile(mobile: String): Customer?
+
     @Query("SELECT * FROM customers ORDER BY id DESC")
     suspend fun getAllCustomersOnce(): List<Customer>
 
