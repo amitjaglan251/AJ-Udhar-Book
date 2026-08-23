@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "266796568068",
+    "project_id": "aj-udhar-book",
+    "storage_bucket": "aj-udhar-book.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:266796568068:android:6371a3b6265bc38436ef51",
+        "android_client_info": {
+          "package_name": "com.aj.udharbook"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBM-63Bk_po4o5NWZsR5HRBTkE2RGK-py4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

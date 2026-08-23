@@ -1,8 +1,10 @@
-package com.aj.udharbook.model
+﻿package com.aj.udharbook.model
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 
+@Serializable
 @Entity(tableName = "customers")
 data class Customer(
     @PrimaryKey(autoGenerate = true)

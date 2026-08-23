@@ -1,4 +1,4 @@
-package com.aj.udharbook.sync
+﻿package com.aj.udharbook.sync
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -14,6 +14,7 @@ import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.random.Random
 
@@ -148,11 +149,11 @@ class FirestoreSyncManager(
     suspend fun createConnection(customerId: Int): String {
         val lenderUid =
             auth.currentUser?.uid
-                ?: throw IllegalStateException("पहले Google Account से Sign In करें।")
+                ?: throw IllegalStateException("à¤ªà¤¹à¤²à¥‡ Google Account à¤¸à¥‡ Sign In à¤•à¤°à¥‡à¤‚à¥¤")
 
         val customer =
             customerDao.getCustomerByIdOnce(customerId)
-                ?: throw IllegalStateException("Customer नहीं मिला।")
+                ?: throw IllegalStateException("Customer à¤¨à¤¹à¥€à¤‚ à¤®à¤¿à¤²à¤¾à¥¤")
 
         repeat(20) {
             val code = generateConnectionCode()
@@ -185,7 +186,7 @@ class FirestoreSyncManager(
             }
         }
 
-        throw IllegalStateException("Connection code generate नहीं हो सका। फिर से कोशिश करें।")
+        throw IllegalStateException("Connection code generate à¤¨à¤¹à¥€à¤‚ à¤¹à¥‹ à¤¸à¤•à¤¾à¥¤ à¤«à¤¿à¤° à¤¸à¥‡ à¤•à¥‹à¤¶à¤¿à¤¶ à¤•à¤°à¥‡à¤‚à¥¤")
     }
 
     // ==================================================
@@ -195,29 +196,29 @@ class FirestoreSyncManager(
     suspend fun acceptConnection(codeInput: String): String {
         val customerUid =
             auth.currentUser?.uid
-                ?: throw IllegalStateException("पहले Google Account से Sign In करें।")
+                ?: throw IllegalStateException("à¤ªà¤¹à¤²à¥‡ Google Account à¤¸à¥‡ Sign In à¤•à¤°à¥‡à¤‚à¥¤")
 
         val code = codeInput.trim().uppercase()
         if (code.length < 6) {
-            throw IllegalArgumentException("Valid connection code डालें।")
+            throw IllegalArgumentException("Valid connection code à¤¡à¤¾à¤²à¥‡à¤‚à¥¤")
         }
 
         val reference = firestore.collection("connections").document(code)
         val snapshot = reference.get().await()
 
         if (!snapshot.exists()) {
-            throw IllegalArgumentException("Connection code नहीं मिला।")
+            throw IllegalArgumentException("Connection code à¤¨à¤¹à¥€à¤‚ à¤®à¤¿à¤²à¤¾à¥¤")
         }
 
         val lenderUid = snapshot.getString("lenderUid") ?: ""
         val status = snapshot.getString("status") ?: ""
 
         if (lenderUid.isBlank() || lenderUid == customerUid) {
-            throw IllegalArgumentException("यह connection इस account के लिए valid नहीं है।")
+            throw IllegalArgumentException("à¤¯à¤¹ connection à¤‡à¤¸ account à¤•à¥‡ à¤²à¤¿à¤ valid à¤¨à¤¹à¥€à¤‚ à¤¹à¥ˆà¥¤")
         }
 
         if (!status.equals("pending", ignoreCase = true)) {
-            throw IllegalArgumentException("यह connection पहले ही accept हो चुका है।")
+            throw IllegalArgumentException("à¤¯à¤¹ connection à¤ªà¤¹à¤²à¥‡ à¤¹à¥€ accept à¤¹à¥‹ à¤šà¥à¤•à¤¾ à¤¹à¥ˆà¥¤")
         }
 
         val customerName = snapshot.getString("customerName") ?: "Customer"
@@ -520,7 +521,7 @@ class FirestoreSyncManager(
             if (type.equals("PAYMENT", ignoreCase = true)) "Payment" else "Udhar"
 
         val text =
-            "$customerName: ₹${String.format("%.2f", amount)} $action update"
+            "$customerName: â‚¹${String.format("%.2f", amount)} $action update"
 
         val notification =
             android.app.Notification.Builder(context, channelId)
@@ -635,3 +636,4 @@ private suspend fun TransactionDao.getTransactionsByCustomerOnce(
 ): List<Transaction> {
     return getAllTransactionsOnce().filter { it.customerId == customerId }
 }
+
