@@ -10,6 +10,20 @@ android {
     namespace = "com.aj.udharbook"
     compileSdk = 34
 
+    signingConfigs {
+        create("release") {
+            storeFile = file(
+                providers.gradleProperty("AJ_UDHARBOOK_STORE_FILE").get()
+            )
+            storePassword =
+                providers.gradleProperty("AJ_UDHARBOOK_STORE_PASSWORD").get()
+            keyAlias =
+                providers.gradleProperty("AJ_UDHARBOOK_KEY_ALIAS").get()
+            keyPassword =
+                providers.gradleProperty("AJ_UDHARBOOK_KEY_PASSWORD").get()
+        }
+    }
+
     defaultConfig {
         applicationId = "com.aj.udharbook"
         minSdk = 24
@@ -22,6 +36,7 @@ android {
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -74,4 +89,3 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }
-
