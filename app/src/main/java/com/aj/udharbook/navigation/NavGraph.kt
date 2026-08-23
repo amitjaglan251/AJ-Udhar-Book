@@ -189,6 +189,8 @@ fun AJNavGraph(
 
                             firestoreSyncManager
                                 .clearLocalData()
+                            firestoreSyncManager
+                                .startIncomingConnectionListeners()
 
 
                             // FIREBASE SIGN OUT
