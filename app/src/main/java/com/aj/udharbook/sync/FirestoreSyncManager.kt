@@ -3,6 +3,7 @@
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import com.aj.udharbook.dao.CustomerDao
 import com.aj.udharbook.dao.TransactionDao
@@ -23,6 +24,7 @@ class FirestoreSyncManager(
     private val transactionDao: TransactionDao
 ) {
 
+    private val TAG = "FirestoreSyncManager"
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
 
@@ -101,9 +103,9 @@ class FirestoreSyncManager(
             .collection("transactions")
             .document(transaction.id.toString())
             .set(data)
+
             .await()
 
-        // NEW: send the same transaction to every active linked customer.
         syncTransactionToLinkedCustomer(transaction)
     }
 
@@ -174,7 +176,6 @@ class FirestoreSyncManager(
 
                 reference.set(data).await()
 
-                // Existing history is also copied into the shared connection.
                 val existingTransactions =
                     transactionDao.getTransactionsByCustomerOnce(customer.id)
 
@@ -225,7 +226,6 @@ class FirestoreSyncManager(
         val customerMobile = snapshot.getString("customerMobile") ?: ""
         val customerAddress = snapshot.getString("customerAddress") ?: ""
 
-        // Update the shared connection first.
         reference.update(
             mapOf(
                 "customerUid" to customerUid,
@@ -235,7 +235,6 @@ class FirestoreSyncManager(
             )
         ).await()
 
-        // Keep a private index under the customer account.
         requireUserDocument()
             .collection("connections")
             .document(code)
@@ -251,7 +250,6 @@ class FirestoreSyncManager(
             )
             .await()
 
-        // Create the linked customer locally if it is not already present.
         var localCustomer =
             customerDao.getCustomerByMobile(customerMobile)
 
@@ -268,7 +266,6 @@ class FirestoreSyncManager(
                 customerDao.getCustomerByIdOnce(newId.toInt())
         }
 
-        // Import current history from the connection.
         val events =
             reference.collection("events").get().await()
 
@@ -542,68 +539,108 @@ class FirestoreSyncManager(
     // ==================================================
 
     suspend fun restoreCloudToLocal() {
+        Log.d(TAG, "restoreCloudToLocal: START")
+
         if (!isUserSignedIn()) {
+            Log.d(TAG, "restoreCloudToLocal: user is NOT signed in")
             throw IllegalStateException("User is not signed in")
         }
 
         val user = requireUserDocument()
 
         val customerSnapshot =
-            user.collection("customers").get().await()
+            user.collection("customers")
+                .get()
+                .await()
 
         val cloudCustomers =
             customerSnapshot.documents.mapNotNull { document ->
-                val id = document.getLong("id")?.toInt()
-                    ?: document.id.toIntOrNull()
-                    ?: return@mapNotNull null
+
+                val id =
+                    document.getLong("id")?.toInt()
+                        ?: document.id.toIntOrNull()
+                        ?: return@mapNotNull null
 
                 Customer(
                     id = id,
                     name = document.getString("name") ?: "",
                     mobile = document.getString("mobile") ?: "",
                     address = document.getString("address") ?: "",
-                    createdAt = document.getLong("createdAt")
-                        ?: System.currentTimeMillis()
+                    createdAt =
+                        document.getLong("createdAt")
+                            ?: System.currentTimeMillis()
                 )
             }
 
+        Log.d(TAG, "Cloud customers: ${cloudCustomers.size}")
+
+        if (cloudCustomers.isNotEmpty()) {
+            customerDao.insertAll(cloudCustomers)
+        }
+
         val transactionSnapshot =
-            user.collection("transactions").get().await()
+            user.collection("transactions")
+                .get()
+                .await()
 
         val cloudTransactions =
             transactionSnapshot.documents.mapNotNull { document ->
-                val id = document.getLong("id")?.toInt()
-                    ?: document.id.toIntOrNull()
-                    ?: return@mapNotNull null
 
-                val customerId = document.getLong("customerId")?.toInt()
-                    ?: return@mapNotNull null
+                val id =
+                    document.getLong("id")?.toInt()
+                        ?: document.id.toIntOrNull()
+                        ?: return@mapNotNull null
+
+                val customerId =
+                    document.getLong("customerId")?.toInt()
+                        ?: return@mapNotNull null
 
                 Transaction(
                     id = id,
                     customerId = customerId,
-                    amount = document.getDouble("amount")
-                        ?: document.getLong("amount")?.toDouble()
-                        ?: 0.0,
-                    type = document.getString("type") ?: "UDHAR",
-                    note = document.getString("note") ?: "",
-                    timestamp = document.getLong("timestamp")
-                        ?: System.currentTimeMillis()
+                    amount =
+                        document.getDouble("amount")
+                            ?: document.getLong("amount")?.toDouble()
+                            ?: 0.0,
+                    type =
+                        document.getString("type")
+                            ?: "UDHAR",
+                    note =
+                        document.getString("note")
+                            ?: "",
+                    timestamp =
+                        document.getLong("timestamp")
+                            ?: System.currentTimeMillis()
                 )
             }
+
+        Log.d(TAG, "Cloud transactions: ${cloudTransactions.size}")
+
+        val validCustomerIds =
+            cloudCustomers
+                .map { it.id }
+                .toSet()
+
+        val validTransactions =
+            cloudTransactions.filter {
+                it.customerId in validCustomerIds
+            }
+
+        Log.d(TAG, "Valid transactions: ${validTransactions.size}")
 
         val localCustomers = customerDao.getAllCustomersOnce()
         val localTransactions = transactionDao.getAllTransactionsOnce()
 
-        if (localCustomers.isEmpty() && cloudCustomers.isNotEmpty()) {
-            customerDao.insertAll(cloudCustomers)
+        Log.d(TAG, "Local customers before restore: ${localCustomers.size}")
+        Log.d(TAG, "Local transactions before restore: ${localTransactions.size}")
+
+        if (validTransactions.isNotEmpty()) {
+            transactionDao.insertAll(validTransactions)
         }
 
-        if (localTransactions.isEmpty() && cloudTransactions.isNotEmpty()) {
-            transactionDao.insertAll(cloudTransactions)
-        }
+        Log.d(TAG, "restoreCloudToLocal: COMPLETE")
+        Log.d(TAG, "Starting incoming connection listeners")
 
-        // Start listening for linked-customer updates after login/restore.
         startIncomingConnectionListeners()
     }
 
@@ -636,4 +673,3 @@ private suspend fun TransactionDao.getTransactionsByCustomerOnce(
 ): List<Transaction> {
     return getAllTransactionsOnce().filter { it.customerId == customerId }
 }
-
