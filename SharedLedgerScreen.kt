@@ -21,6 +21,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.aj.udharbook.sync.FirestoreSyncManager
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.launch
 
 @Composable
 fun SharedLedgerScreen(
@@ -32,40 +34,28 @@ fun SharedLedgerScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
 
-    Scaffold(
-        topBar = { TopAppBar(title = { Text("🔗 Shared Ledger") }) }
-    ) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("🔗 Shared Ledger") }) }) { padding ->
         Column(
             modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text("Join Customer Ledger", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text("Customer ke SMS me mila 6-digit code yahan enter karein.")
-
             OutlinedTextField(
                 value = code,
-                onValueChange = { value ->
-                    code = value.filter(Char::isDigit).take(6)
-                    error = null
-                },
+                onValueChange = { value -> code = value.filter(Char::isDigit).take(6); error = null },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("6-digit Share Code") },
                 singleLine = true
             )
-
             Button(
                 onClick = {
                     loading = true
                     error = null
-                    kotlinx.coroutines.MainScope().launch {
-                        try {
-                            firestoreSyncManager.joinShareCode(code)
-                            onJoined()
-                        } catch (e: Exception) {
-                            error = e.message ?: "Join failed"
-                        } finally {
-                            loading = false
-                        }
+                    MainScope().launch {
+                        try { firestoreSyncManager.joinShareCode(code); onJoined() }
+                        catch (e: Exception) { error = e.message ?: "Join failed" }
+                        finally { loading = false }
                     }
                 },
                 enabled = code.length == 6 && !loading,
@@ -73,11 +63,7 @@ fun SharedLedgerScreen(
             ) {
                 if (loading) CircularProgressIndicator(modifier = Modifier.padding(2.dp)) else Text("Join Shared Ledger")
             }
-
-            if (error != null) {
-                Text(error ?: "", color = MaterialTheme.colorScheme.error)
-            }
-
+            if (error != null) Text(error ?: "", color = MaterialTheme.colorScheme.error)
             Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Back") }
         }
     }
