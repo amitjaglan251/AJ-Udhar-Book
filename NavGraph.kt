@@ -1,5 +1,7 @@
 package com.aj.udharbook.navigation
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -31,6 +33,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 @Composable
 fun AJNavGraph(
@@ -50,7 +53,6 @@ fun AJNavGraph(
                 }
             })
         }
-
         composable(Screen.Dashboard.route) {
             val customers by customerViewModel.allCustomers.collectAsState(initial = emptyList())
             val transactions by transactionViewModel.allTransactions.collectAsState(initial = emptyList())
@@ -76,71 +78,46 @@ fun AJNavGraph(
                 }
             )
         }
-
         composable(Screen.SharedLedger.route) {
-            SharedLedgerScreen(
-                firestoreSyncManager = firestoreSyncManager,
-                onJoined = { navController.popBackStack() },
-                onBack = { navController.popBackStack() }
-            )
+            SharedLedgerScreen(firestoreSyncManager = firestoreSyncManager, onJoined = { navController.popBackStack() }, onBack = { navController.popBackStack() })
         }
-
         composable(Screen.Reports.route) {
             val customers by customerViewModel.allCustomers.collectAsState(initial = emptyList())
             val transactions by transactionViewModel.allTransactions.collectAsState(initial = emptyList())
             ReportsScreen(customers = customers, transactions = transactions, onCustomerClick = { id -> navController.navigate(Screen.CustomerDetails.createRoute(id)) })
         }
-
-        composable(Screen.Backup.route) {
-            BackupRestoreScreen(backupManager = backupManager, onRestoreBackup = { navController.navigate("restore_backup") })
-        }
-        composable("restore_backup") {
-            RestoreBackupScreen(backupManager = backupManager, onFinished = { navController.popBackStack() })
-        }
-        composable(Screen.AddCustomer.route) {
-            AddCustomerScreen(viewModel = customerViewModel, onSaved = { navController.popBackStack() })
-        }
-        composable(Screen.CustomerList.route) {
-            CustomerListScreen(navController = navController, viewModel = customerViewModel)
-        }
-
-        composable(
-            Screen.CustomerDetails.route,
-            arguments = listOf(navArgument("customerId") { type = NavType.IntType })
-        ) { entry ->
+        composable(Screen.Backup.route) { BackupRestoreScreen(backupManager = backupManager, onRestoreBackup = { navController.navigate("restore_backup") }) }
+        composable("restore_backup") { RestoreBackupScreen(backupManager = backupManager, onFinished = { navController.popBackStack() }) }
+        composable(Screen.AddCustomer.route) { AddCustomerScreen(viewModel = customerViewModel, onSaved = { navController.popBackStack() }) }
+        composable(Screen.CustomerList.route) { CustomerListScreen(navController = navController, viewModel = customerViewModel) }
+        composable(Screen.CustomerDetails.route, arguments = listOf(navArgument("customerId") { type = NavType.IntType })) { entry ->
             val id = entry.arguments?.getInt("customerId") ?: 0
             val customer by customerViewModel.getCustomerById(id).collectAsState(initial = null)
             val transactions by transactionViewModel.getTransactionsByCustomer(id).collectAsState(initial = emptyList())
             if (customer != null) {
                 CustomerDetailsScreen(
-                    customerName = customer!!.name,
-                    mobile = customer!!.mobile,
-                    address = customer!!.address,
+                    customerName = customer!!.name, mobile = customer!!.mobile, address = customer!!.address,
                     transactions = transactions,
                     onAddUdhar = { navController.navigate(Screen.AddTransaction.createRoute(id, "UDHAR")) },
                     onAddPayment = { navController.navigate(Screen.AddTransaction.createRoute(id, "PAYMENT")) },
                     onEditCustomer = { navController.navigate(Screen.EditCustomer.createRoute(id)) },
                     onDeleteCustomer = { customerViewModel.delete(customer!!); navController.popBackStack() },
                     onEditTransaction = { transactionViewModel.update(it) },
-                    onDeleteTransaction = { transactionViewModel.delete(it) }
+                    onDeleteTransaction = { transactionViewModel.delete(it) },
+                    onSmsCustomer = {
+                        val currentBalance = transactions.filter { it.type.equals("UDHAR", true) }.sumOf { it.amount } -
+                            transactions.filter { it.type.equals("PAYMENT", true) }.sumOf { it.amount }
+                        scopeLaunchSms(navController, firestoreSyncManager, customer!!, currentBalance)
+                    }
                 )
             } else CircularProgressIndicator()
         }
-
-        composable(
-            Screen.EditCustomer.route,
-            arguments = listOf(navArgument("customerId") { type = NavType.IntType })
-        ) { entry ->
+        composable(Screen.EditCustomer.route, arguments = listOf(navArgument("customerId") { type = NavType.IntType })) { entry ->
             val id = entry.arguments?.getInt("customerId") ?: 0
             val customer by customerViewModel.getCustomerById(id).collectAsState(initial = null)
-            if (customer != null) EditCustomerScreen(customer = customer!!, viewModel = customerViewModel, onSaved = { navController.popBackStack() })
-            else CircularProgressIndicator()
+            if (customer != null) EditCustomerScreen(customer = customer!!, viewModel = customerViewModel, onSaved = { navController.popBackStack() }) else CircularProgressIndicator()
         }
-
-        composable(
-            Screen.AddTransaction.route,
-            arguments = listOf(navArgument("customerId") { type = NavType.IntType }, navArgument("type") { type = NavType.StringType })
-        ) { entry ->
+        composable(Screen.AddTransaction.route, arguments = listOf(navArgument("customerId") { type = NavType.IntType }, navArgument("type") { type = NavType.StringType })) { entry ->
             val id = entry.arguments?.getInt("customerId") ?: 0
             val type = entry.arguments?.getString("type") ?: "UDHAAR"
             val customer by customerViewModel.getCustomerById(id).collectAsState(initial = null)
@@ -148,17 +125,23 @@ fun AJNavGraph(
             val name = customer?.name ?: ""
             val mobile = customer?.mobile ?: ""
             if (type.equals("PAYMENT", ignoreCase = true)) {
-                val balance = transactions.fold(0.0) { total, t ->
-                    when {
-                        t.type.equals("UDHAR", ignoreCase = true) -> total + t.amount
-                        t.type.equals("PAYMENT", ignoreCase = true) -> total - t.amount
-                        else -> total
-                    }
-                }.coerceAtLeast(0.0)
+                val balance = transactions.fold(0.0) { total, t -> when { t.type.equals("UDHAR", true) -> total + t.amount; t.type.equals("PAYMENT", true) -> total - t.amount; else -> total } }.coerceAtLeast(0.0)
                 PaymentScreen(customerId = id, customerName = name, customerMobile = mobile, currentBalance = balance, transactionViewModel = transactionViewModel, onSaved = { navController.popBackStack() })
             } else {
                 AddTransactionScreen(customerId = id, customerName = name, customerMobile = mobile, initialType = type, viewModel = transactionViewModel, onSaved = { navController.popBackStack() })
             }
         }
+    }
+}
+
+private fun scopeLaunchSms(navController: NavHostController, syncManager: FirestoreSyncManager, customer: com.aj.udharbook.model.Customer, balance: Double) {
+    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+        try {
+            val code = syncManager.createShareCode(customer)
+            val message = "AJ Udhar Book: ${customer.name}, current balance ₹${String.format(Locale.US, "%.2f", balance)} hai. Shared Ledger join code: $code"
+            val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${customer.mobile.trim()}"))
+                .putExtra("sms_body", message)
+            navController.context.startActivity(intent)
+        } catch (e: Exception) { e.printStackTrace() }
     }
 }
