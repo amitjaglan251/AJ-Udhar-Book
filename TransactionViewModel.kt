@@ -16,30 +16,21 @@ class TransactionViewModel(
 
     val allTransactions = repository.allTransactions
 
-    fun insert(
-        transaction: Transaction,
-        onCompleted: (Double) -> Unit = {}
-    ) = viewModelScope.launch {
-        val customer = firestoreSyncManager.runCatchingCustomer(transaction.customerId)
-        val syncKey = if (customer?.sharedLedgerId?.matches(Regex("\\d{6}")) == true) {
-            UUID.randomUUID().toString()
-        } else ""
-        val prepared = transaction.copy(syncKey = if (transaction.syncKey.isBlank()) syncKey else transaction.syncKey)
+    fun insert(transaction: Transaction, onCompleted: (Double) -> Unit = {}) = viewModelScope.launch {
+        val customer = try { firestoreSyncManager.getCustomerByIdOnce(transaction.customerId) } catch (_: Exception) { null }
+        val shared = customer?.sharedLedgerId?.matches(Regex("\\d{6}")) == true
+        val syncKey = if (shared && transaction.syncKey.isBlank()) UUID.randomUUID().toString() else transaction.syncKey
+        val prepared = transaction.copy(syncKey = syncKey)
         val generatedId = repository.insert(prepared)
         val savedTransaction = prepared.copy(id = generatedId.toInt())
-
         try {
             firestoreSyncManager.syncTransaction(savedTransaction)
             firestoreSyncManager.syncSharedLedgerTransaction(savedTransaction)
         } catch (e: Exception) {
             e.printStackTrace()
         }
-
-        val newBalance = try {
-            repository.getCustomerBalance(transaction.customerId)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            0.0
+        val newBalance = try { repository.getCustomerBalance(transaction.customerId) } catch (e: Exception) {
+            e.printStackTrace(); 0.0
         }
         onCompleted(newBalance)
     }
@@ -64,19 +55,8 @@ class TransactionViewModel(
         }
     }
 
-    fun getTransactionsByCustomer(customerId: Int) =
-        repository.getTransactionsByCustomer(customerId)
+    fun getTransactionsByCustomer(customerId: Int) = repository.getTransactionsByCustomer(customerId)
 }
-
-private suspend fun FirestoreSyncManager.runCatchingCustomer(customerId: Int) =
-    try {
-        val field = FirestoreSyncManager::class.java.getDeclaredField("customerDao")
-        field.isAccessible = true
-        val dao = field.get(this) as com.aj.udharbook.dao.CustomerDao
-        dao.getCustomerByIdOnce(customerId)
-    } catch (_: Exception) {
-        null
-    }
 
 class TransactionViewModelFactory(
     private val repository: TransactionRepository,
