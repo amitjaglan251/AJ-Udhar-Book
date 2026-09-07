@@ -7,6 +7,10 @@ import com.aj.udharbook.model.Transaction
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
 class FirestoreSyncManager(
@@ -16,6 +20,7 @@ class FirestoreSyncManager(
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
     private val sharedListeners = mutableMapOf<String, ListenerRegistration>()
+    private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun isUserSignedIn(): Boolean = auth.currentUser != null
     fun getCurrentUserId(): String? = auth.currentUser?.uid
@@ -68,6 +73,8 @@ class FirestoreSyncManager(
     }
 
     suspend fun clearLocalData() {
+        sharedListeners.values.forEach { it.remove() }
+        sharedListeners.clear()
         transactionDao.deleteAll()
         customerDao.deleteAll()
     }
@@ -98,6 +105,10 @@ class FirestoreSyncManager(
         }
         if (customerDao.getAllCustomersOnce().isEmpty() && cloudCustomers.isNotEmpty()) customerDao.insertAll(cloudCustomers)
         if (transactionDao.getAllTransactionsOnce().isEmpty() && cloudTransactions.isNotEmpty()) transactionDao.insertAll(cloudTransactions)
+        cloudCustomers.filter { it.sharedLedgerId.matches(Regex("\\d{6}")) }.forEach { customer ->
+            syncSharedLedgerToLocal(customer.sharedLedgerId, customer.id)
+            listenToSharedLedger(customer.sharedLedgerId, customer.id)
+        }
     }
 
     suspend fun createShareCode(customer: Customer): String {
@@ -107,15 +118,24 @@ class FirestoreSyncManager(
         val uid = getCurrentUserId() ?: throw IllegalStateException("Login required")
         val ledgerRef = firestore.collection("sharedLedgers").document(code)
         val existingLedger = ledgerRef.get().await()
-        if (!existingLedger.exists()) ledgerRef.set(hashMapOf<String, Any>(
-            "inviteCode" to code, "ownerUid" to uid, "ownerCustomerId" to customer.id,
-            "customerName" to customer.name, "mobile" to customer.mobile.filter(Char::isDigit).takeLast(10),
-            "address" to customer.address, "participantUids" to listOf(uid), "createdAt" to System.currentTimeMillis()
-        )).await()
+        if (!existingLedger.exists()) {
+            ledgerRef.set(hashMapOf<String, Any>(
+                "inviteCode" to code, "ownerUid" to uid, "ownerCustomerId" to customer.id,
+                "customerName" to customer.name, "mobile" to customer.mobile.filter(Char::isDigit).takeLast(10),
+                "address" to customer.address, "participantUids" to listOf(uid), "createdAt" to System.currentTimeMillis()
+            )).await()
+        } else {
+            val participants = (existingLedger.get("participantUids") as? List<*>)?.filterIsInstance<String>()?.toMutableList() ?: mutableListOf()
+            if (!participants.contains(uid)) {
+                participants.add(uid)
+                ledgerRef.update("participantUids", participants).await()
+            }
+        }
         val updatedCustomer = customer.copy(sharedLedgerId = code)
         customerDao.update(updatedCustomer)
         syncCustomer(updatedCustomer)
         publishCustomerTransactions(updatedCustomer)
+        listenToSharedLedger(code, customer.id)
         return code
     }
 
@@ -132,6 +152,7 @@ class FirestoreSyncManager(
         transactionDao.getTransactionsByCustomerOnce(customer.id).forEach { transaction ->
             val syncKey = transaction.syncKey.ifBlank { "${auth.currentUser?.uid}:${transaction.id}:${transaction.timestamp}" }
             val shared = transaction.copy(syncKey = syncKey)
+            if (transaction.syncKey.isBlank()) transactionDao.update(shared)
             firestore.collection("sharedLedgers").document(customer.sharedLedgerId).collection("transactions")
                 .document(syncKey).set(transactionMap(shared)).await()
         }
@@ -146,8 +167,10 @@ class FirestoreSyncManager(
         val snapshot = ledgerRef.get().await()
         if (!snapshot.exists()) throw IllegalArgumentException("Share code not found")
         val participants = (snapshot.get("participantUids") as? List<*>)?.filterIsInstance<String>()?.toMutableList() ?: mutableListOf()
-        if (!participants.contains(uid)) participants.add(uid)
-        ledgerRef.update("participantUids", participants).await()
+        if (!participants.contains(uid)) {
+            participants.add(uid)
+            ledgerRef.update("participantUids", participants).await()
+        }
         val name = snapshot.getString("customerName") ?: "Shared Customer"
         val mobile = snapshot.getString("mobile") ?: ""
         val address = snapshot.getString("address") ?: ""
@@ -191,8 +214,9 @@ class FirestoreSyncManager(
         val current = transactionDao.getTransactionsByCustomerOnce(localCustomerId).associateBy { it.syncKey }
         snapshot.documents.forEach { doc ->
             val syncKey = doc.getString("syncKey") ?: doc.id
-            if (!current.containsKey(syncKey)) transactionDao.insert(Transaction(
-                id = -(kotlin.math.abs(syncKey.hashCode()) + 1), customerId = localCustomerId,
+            val existing = current[syncKey]
+            transactionDao.insert(Transaction(
+                id = existing?.id ?: -(kotlin.math.abs(syncKey.hashCode()) + 1), customerId = localCustomerId,
                 amount = doc.getDouble("amount") ?: doc.getLong("amount")?.toDouble() ?: 0.0,
                 type = doc.getString("type") ?: "UDHAR", note = doc.getString("note") ?: "",
                 timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis(), syncKey = syncKey
@@ -206,16 +230,29 @@ class FirestoreSyncManager(
         sharedListeners[code] = firestore.collection("sharedLedgers").document(code).collection("transactions")
             .addSnapshotListener { snapshot, error ->
                 if (error != null || snapshot == null) return@addSnapshotListener
-                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                    snapshot.documents.forEach { doc ->
+                syncScope.launch {
+                    snapshot.documentChanges.forEach { change ->
+                        val doc = change.document
                         val syncKey = doc.getString("syncKey") ?: doc.id
-                        val existing = transactionDao.getTransactionsByCustomerOnce(localCustomerId).firstOrNull { it.syncKey == syncKey }
-                        if (doc.exists()) transactionDao.insert(Transaction(
-                            id = existing?.id ?: -(kotlin.math.abs(syncKey.hashCode()) + 1), customerId = localCustomerId,
-                            amount = doc.getDouble("amount") ?: doc.getLong("amount")?.toDouble() ?: 0.0,
-                            type = doc.getString("type") ?: "UDHAR", note = doc.getString("note") ?: "",
-                            timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis(), syncKey = syncKey
-                        ))
+                        when (change.type) {
+                            com.google.firebase.firestore.DocumentChange.Type.ADDED,
+                            com.google.firebase.firestore.DocumentChange.Type.MODIFIED -> {
+                                val existing = transactionDao.getTransactionsByCustomerOnce(localCustomerId)
+                                    .firstOrNull { it.syncKey == syncKey }
+                                transactionDao.insert(Transaction(
+                                    id = existing?.id ?: -(kotlin.math.abs(syncKey.hashCode()) + 1),
+                                    customerId = localCustomerId,
+                                    amount = doc.getDouble("amount") ?: doc.getLong("amount")?.toDouble() ?: 0.0,
+                                    type = doc.getString("type") ?: "UDHAR",
+                                    note = doc.getString("note") ?: "",
+                                    timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis(),
+                                    syncKey = syncKey
+                                ))
+                            }
+                            com.google.firebase.firestore.DocumentChange.Type.REMOVED -> {
+                                transactionDao.deleteBySyncKey(syncKey)
+                            }
+                        }
                     }
                 }
             }
