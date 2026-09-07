@@ -5,14 +5,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,6 +26,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.aj.udharbook.sync.FirestoreSyncManager
+import com.aj.udharbook.sync.SharedJoinRequest
+import com.aj.udharbook.sync.SharedLedgerSecurity
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 
@@ -31,40 +38,108 @@ fun SharedLedgerScreen(
     onBack: () -> Unit
 ) {
     var code by remember { mutableStateOf("") }
+    var status by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
+    var requests by remember { mutableStateOf<List<SharedJoinRequest>>(emptyList()) }
+
+    fun refreshRequests() {
+        MainScope().launch {
+            try { requests = firestoreSyncManager.getOwnedJoinRequests() } catch (_: Exception) { }
+        }
+    }
+
+    LaunchedEffect(Unit) { refreshRequests() }
 
     Scaffold(topBar = { TopAppBar(title = { Text("🔗 Shared Ledger") }) }) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text("Join Customer Ledger", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("Customer ke SMS me mila 6-digit code yahan enter karein.")
-            OutlinedTextField(
-                value = code,
-                onValueChange = { value -> code = value.filter(Char::isDigit).take(6); error = null },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("6-digit Share Code") },
-                singleLine = true
-            )
-            Button(
-                onClick = {
-                    loading = true
-                    error = null
-                    MainScope().launch {
-                        try { firestoreSyncManager.joinShareCode(code); onJoined() }
-                        catch (e: Exception) { error = e.message ?: "Join failed" }
-                        finally { loading = false }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Join Customer Ledger", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text("Customer ke SMS me mila 6-digit code yahan enter karein. Ab owner approval zaroori hai.")
+                    OutlinedTextField(
+                        value = code,
+                        onValueChange = { value -> code = value.filter(Char::isDigit).take(6); error = null; status = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("6-digit Share Code") },
+                        singleLine = true
+                    )
+                    Button(
+                        onClick = {
+                            loading = true; error = null
+                            MainScope().launch {
+                                try {
+                                    status = firestoreSyncManager.requestJoinShareCode(code)
+                                    if (status == SharedLedgerSecurity.APPROVED) {
+                                        firestoreSyncManager.completeApprovedJoin(code)
+                                        onJoined()
+                                    }
+                                } catch (e: Exception) { error = e.message ?: "Join request failed" }
+                                finally { loading = false }
+                            }
+                        },
+                        enabled = code.length == 6 && !loading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (loading) CircularProgressIndicator(modifier = Modifier.padding(2.dp)) else Text("Request Join")
                     }
-                },
-                enabled = code.length == 6 && !loading,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                if (loading) CircularProgressIndicator(modifier = Modifier.padding(2.dp)) else Text("Join Shared Ledger")
+                    OutlinedButton(
+                        onClick = {
+                            loading = true; error = null
+                            MainScope().launch {
+                                try {
+                                    status = firestoreSyncManager.getJoinRequestStatus(code)
+                                    if (status == SharedLedgerSecurity.APPROVED) {
+                                        firestoreSyncManager.completeApprovedJoin(code)
+                                        onJoined()
+                                    } else if (status == SharedLedgerSecurity.REJECTED) {
+                                        error = "Owner ne request reject kar di hai."
+                                    } else if (status == null) {
+                                        error = "Is code ke liye koi request nahi mili."
+                                    }
+                                } catch (e: Exception) { error = e.message ?: "Approval check failed" }
+                                finally { loading = false }
+                            }
+                        },
+                        enabled = code.length == 6 && !loading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Check Approval") }
+                    if (status != null) Text("Status: $status")
+                    if (error != null) Text(error ?: "", color = MaterialTheme.colorScheme.error)
+                }
             }
-            if (error != null) Text(error ?: "", color = MaterialTheme.colorScheme.error)
-            Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Back") }
+
+            item {
+                Text("Owner Approval Requests", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                if (requests.isEmpty()) Text("No pending requests.")
+            }
+
+            items(requests.filter { it.status == SharedLedgerSecurity.PENDING }) { request ->
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(request.requesterName, fontWeight = FontWeight.Bold)
+                        Text("Ledger: ${request.ledgerCode}")
+                        Text("Requester: ${request.requesterUid.take(12)}…")
+                        Button(onClick = {
+                            MainScope().launch {
+                                try { firestoreSyncManager.approveJoinRequest(request); refreshRequests() }
+                                catch (e: Exception) { error = e.message ?: "Approval failed" }
+                            }
+                        }, modifier = Modifier.fillMaxWidth()) { Text("Approve") }
+                        OutlinedButton(onClick = {
+                            MainScope().launch {
+                                try { firestoreSyncManager.rejectJoinRequest(request); refreshRequests() }
+                                catch (e: Exception) { error = e.message ?: "Rejection failed" }
+                            }
+                        }, modifier = Modifier.fillMaxWidth()) { Text("Reject") }
+                    }
+                }
+            }
+
+            item { Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Back") } }
         }
     }
 }
