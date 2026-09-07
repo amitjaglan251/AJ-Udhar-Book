@@ -18,17 +18,12 @@ import kotlinx.serialization.Serializable
     ]
 )
 data class Transaction(
-
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
-
     val customerId: Int,
-
     val amount: Double,
-
     val type: String,
-
     val note: String = "",
-
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val syncKey: String = ""
 )
