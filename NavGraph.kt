@@ -4,8 +4,12 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -15,6 +19,8 @@ import androidx.navigation.navArgument
 import com.aj.udharbook.R
 import com.aj.udharbook.backup.BackupManager
 import com.aj.udharbook.sync.FirestoreSyncManager
+import com.aj.udharbook.sync.JoinRequestNotification
+import com.aj.udharbook.sync.JoinRequestObserver
 import com.aj.udharbook.ui.auth.LoginScreen
 import com.aj.udharbook.ui.backup.BackupRestoreScreen
 import com.aj.udharbook.ui.backup.RestoreBackupScreen
@@ -57,14 +63,34 @@ fun AJNavGraph(
             val customers by customerViewModel.allCustomers.collectAsState(initial = emptyList())
             val transactions by transactionViewModel.allTransactions.collectAsState(initial = emptyList())
             val scope = rememberCoroutineScope()
+            val joinRequestObserver = remember { JoinRequestObserver() }
+            val joinRequestCount = remember { mutableIntStateOf(0) }
+            val ledgerCodes = remember(customers) {
+                customers.map { it.sharedLedgerId }.filter { it.isNotBlank() }.distinct().sorted()
+            }
+
+            LaunchedEffect(ledgerCodes) {
+                joinRequestObserver.start(ledgerCodes) { requests ->
+                    joinRequestCount.intValue = JoinRequestNotification.pendingCount(requests)
+                }
+            }
+            DisposableEffect(Unit) {
+                onDispose {
+                    joinRequestObserver.stop()
+                    joinRequestCount.intValue = 0
+                }
+            }
+
             DashboardScreen(
                 customers = customers,
                 transactions = transactions,
+                joinRequestCount = joinRequestCount.intValue,
                 onAddCustomer = { navController.navigate(Screen.AddCustomer.route) },
                 onViewCustomers = { navController.navigate(Screen.CustomerList.route) },
                 onViewReports = { navController.navigate(Screen.Reports.route) },
                 onBackupRestore = { navController.navigate(Screen.Backup.route) },
                 onSharedLedger = { navController.navigate(Screen.SharedLedger.route) },
+                onJoinRequests = { navController.navigate(Screen.SharedLedger.route) },
                 onSignOut = {
                     scope.launch {
                         try { firestoreSyncManager.clearLocalData() } catch (e: Exception) { e.printStackTrace() }
