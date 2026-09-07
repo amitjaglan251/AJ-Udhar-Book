@@ -1,7 +1,6 @@
 package com.aj.udharbook.ui.customer
 
 import android.graphics.Bitmap
-
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Context
@@ -59,6 +58,7 @@ import java.util.Locale
 
 private val UdharGreen = Color(0xFF2E7D32)
 private val PaymentRed = Color(0xFFD32F2F)
+private val SharedBlue = Color(0xFF00695C)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,1589 +72,393 @@ fun CustomerDetailsScreen(
     onEditCustomer: () -> Unit = {},
     onDeleteCustomer: () -> Unit = {},
     onEditTransaction: (Transaction) -> Unit = {},
-    onDeleteTransaction: (Transaction) -> Unit = {}
+    onDeleteTransaction: (Transaction) -> Unit = {},
+    onSmsCustomer: () -> Unit = {},
+    sharedLedgerId: String = ""
 ) {
-
     val context = LocalContext.current
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var transactionToDelete by remember { mutableStateOf<Transaction?>(null) }
+    var transactionToEdit by remember { mutableStateOf<Transaction?>(null) }
+    var pdfFile by remember { mutableStateOf<File?>(null) }
+    var showPdfPreview by remember { mutableStateOf(false) }
+    var isGeneratingPdf by remember { mutableStateOf(false) }
+    var pdfError by remember { mutableStateOf<String?>(null) }
 
-    var showDeleteDialog by remember {
-        mutableStateOf(false)
-    }
-
-    var transactionToDelete by remember {
-        mutableStateOf<Transaction?>(null)
-    }
-
-    var transactionToEdit by remember {
-        mutableStateOf<Transaction?>(null)
-    }
-
-    var pdfFile by remember {
-        mutableStateOf<File?>(null)
-    }
-
-    var showPdfPreview by remember {
-        mutableStateOf(false)
-    }
-
-    var isGeneratingPdf by remember {
-        mutableStateOf(false)
-    }
-
-    var pdfError by remember {
-        mutableStateOf<String?>(null)
-    }
-
-    // ==================================================
-    // TOTAL UDHAAR
-    // ==================================================
-
-    val totalUdhar = transactions
-        .filter {
-            it.type.equals(
-                "UDHAR",
-                ignoreCase = true
-            )
-        }
-        .sumOf {
-            it.amount
-        }
-
-    // ==================================================
-    // TOTAL PAYMENT
-    // ==================================================
-
-    val totalPayment = transactions
-        .filter {
-            it.type.equals(
-                "PAYMENT",
-                ignoreCase = true
-            )
-        }
-        .sumOf {
-            it.amount
-        }
-
-    // ==================================================
-    // CURRENT BALANCE
-    // ==================================================
-
-    val currentBalance =
-        totalUdhar - totalPayment
-
-    // ==================================================
-    // GENERATE PDF
-    // ==================================================
+    val totalUdhar = transactions.filter { it.type.equals("UDHAR", true) }.sumOf { it.amount }
+    val totalPayment = transactions.filter { it.type.equals("PAYMENT", true) }.sumOf { it.amount }
+    val currentBalance = totalUdhar - totalPayment
 
     fun generatePdf() {
-
         if (isGeneratingPdf) return
-
         isGeneratingPdf = true
         pdfError = null
-
         try {
-
-            val file =
-                PdfGenerator.generateCustomerPdf(
-                    context = context,
-                    customerName = customerName,
-                    mobile = mobile,
-                    address = address,
-                    transactions = transactions
-                )
-
-            pdfFile = file
+            pdfFile = PdfGenerator.generateCustomerPdf(
+                context = context,
+                customerName = customerName,
+                mobile = mobile,
+                address = address,
+                transactions = transactions
+            )
             isGeneratingPdf = false
             showPdfPreview = true
-
         } catch (e: Exception) {
-
             isGeneratingPdf = false
-
-            pdfError =
-                e.message
-                    ?: "PDF generate नहीं हो सकी।"
+            pdfError = e.message ?: "PDF generate नहीं हो सकी।"
         }
     }
 
-    // ==================================================
-    // SCREEN
-    // ==================================================
-
     Scaffold(
-
         topBar = {
-
             TopAppBar(
-
-                title = {
-                    Text(customerName)
-                },
-
+                title = { Text(customerName) },
                 actions = {
-
-                    TextButton(
-                        onClick = onEditCustomer
-                    ) {
-                        Text("Edit")
-                    }
-
-                    TextButton(
-                        onClick = {
-                            showDeleteDialog = true
-                        }
-                    ) {
-                        Text("Delete")
-                    }
+                    TextButton(onClick = onEditCustomer) { Text("Edit") }
+                    TextButton(onClick = { showDeleteDialog = true }) { Text("Delete") }
                 }
             )
         }
-
     ) { paddingValues ->
-
         LazyColumn(
-
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp),
-
-            verticalArrangement =
-                Arrangement.spacedBy(16.dp)
+            modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-
-            // ==================================================
-            // CUSTOMER INFORMATION
-            // ==================================================
-
             item {
-
                 Card(
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    elevation =
-                        CardDefaults.cardElevation(
-                            defaultElevation = 4.dp
-                        )
+                    modifier = Modifier.fillMaxWidth(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                 ) {
-
-                    Column(
-                        modifier =
-                            Modifier.padding(16.dp)
-                    ) {
-
-                        Text(
-                            text = customerName,
-                            fontSize = 24.sp,
-                            fontWeight =
-                                FontWeight.Bold
-                        )
-
-                        Spacer(
-                            modifier =
-                                Modifier.height(8.dp)
-                        )
-
-                        Text(
-                            text =
-                                "Mobile : $mobile"
-                        )
-
-                        Spacer(
-                            modifier =
-                                Modifier.height(4.dp)
-                        )
-
-                        Text(
-                            text =
-                                "Address : $address"
-                        )
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(customerName, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Mobile : $mobile")
+                        Spacer(Modifier.height(4.dp))
+                        Text("Address : $address")
                     }
                 }
             }
 
-            // ==================================================
-            // SUMMARY
-            // ==================================================
-
             item {
-
-                Row(
-
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    horizontalArrangement =
-                        Arrangement.spacedBy(12.dp)
-                ) {
-
-                    SummaryCard(
-                        title = "Udhar",
-                        amount = totalUdhar,
-                        titleColor = UdharGreen,
-                        amountColor = UdharGreen,
-                        modifier =
-                            Modifier.weight(1f)
-                    )
-
-                    SummaryCard(
-                        title = "Payment",
-                        amount = totalPayment,
-                        titleColor = PaymentRed,
-                        amountColor = PaymentRed,
-                        modifier =
-                            Modifier.weight(1f)
-                    )
-                }
-            }
-
-            // ==================================================
-            // CURRENT BALANCE
-            // ==================================================
-
-            item {
-
-                val balanceColor =
-                    if (currentBalance > 0) {
-                        UdharGreen
-                    } else if (currentBalance < 0) {
-                        PaymentRed
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    }
-
                 Card(
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    elevation =
-                        CardDefaults.cardElevation(
-                            defaultElevation = 6.dp
-                        )
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (sharedLedgerId.isNotBlank())
+                            SharedBlue.copy(alpha = 0.10f)
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    )
                 ) {
-
-                    Column(
-                        modifier =
-                            Modifier.padding(20.dp)
-                    ) {
-
+                    Column(Modifier.padding(16.dp)) {
                         Text(
-                            text =
-                                "Current Balance",
-
-                            style =
-                                MaterialTheme.typography
-                                    .titleMedium
+                            if (sharedLedgerId.isNotBlank()) "🔗 Shared Ledger Active"
+                            else "🔗 Shared Ledger Not Linked",
+                            color = if (sharedLedgerId.isNotBlank()) SharedBlue else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
                         )
-
-                        Spacer(
-                            modifier =
-                                Modifier.height(8.dp)
-                        )
-
-                        Text(
-                            text =
-                                formatAmount(
-                                    currentBalance
-                                ),
-
-                            color =
-                                balanceColor,
-
-                            fontSize = 30.sp,
-
-                            fontWeight =
-                                FontWeight.Bold
-                        )
+                        Spacer(Modifier.height(6.dp))
+                        if (sharedLedgerId.isNotBlank()) {
+                            Text("Join Code: $sharedLedgerId")
+                            Text("Transactions sync automatically between participants.")
+                        } else {
+                            Text("SMS Customer दबाकर shared ledger code बनाएं और customer को भेजें।")
+                        }
                     }
                 }
             }
 
-            // ==================================================
-            // ADD BUTTONS
-            // ==================================================
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SummaryCard("Udhar", totalUdhar, UdharGreen, UdharGreen, Modifier.weight(1f))
+                    SummaryCard("Payment", totalPayment, PaymentRed, PaymentRed, Modifier.weight(1f))
+                }
+            }
 
             item {
-
-                Row(
-
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    horizontalArrangement =
-                        Arrangement.spacedBy(12.dp)
-                ) {
-
-                    Button(
-
-                        modifier =
-                            Modifier.weight(1f),
-
-                        onClick =
-                            onAddUdhar,
-
-                        colors =
-                            ButtonDefaults.buttonColors(
-                                containerColor =
-                                    UdharGreen
-                            )
-                    ) {
-
-                        Text(
-                            "Add Udhar"
-                        )
-                    }
-
-                    Button(
-
-                        modifier =
-                            Modifier.weight(1f),
-
-                        onClick =
-                            onAddPayment,
-
-                        colors =
-                            ButtonDefaults.buttonColors(
-                                containerColor =
-                                    PaymentRed
-                            )
-                    ) {
-
-                        Text(
-                            "Add Payment"
-                        )
+                val balanceColor = when {
+                    currentBalance > 0 -> UdharGreen
+                    currentBalance < 0 -> PaymentRed
+                    else -> MaterialTheme.colorScheme.onSurface
+                }
+                Card(Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)) {
+                    Column(Modifier.padding(20.dp)) {
+                        Text("Current Balance", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(8.dp))
+                        Text(formatAmount(currentBalance), color = balanceColor, fontSize = 30.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
 
-            // ==================================================
-            // PDF BUTTON
-            // ==================================================
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        onClick = onAddUdhar,
+                        colors = ButtonDefaults.buttonColors(containerColor = UdharGreen)
+                    ) { Text("Add Udhar") }
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        onClick = onAddPayment,
+                        colors = ButtonDefaults.buttonColors(containerColor = PaymentRed)
+                    ) { Text("Add Payment") }
+                }
+            }
 
             item {
+                Button(modifier = Modifier.fillMaxWidth(), onClick = onSmsCustomer) {
+                    Text("📩 SMS Customer")
+                }
+            }
 
+            item {
                 Button(
-
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    enabled =
-                        !isGeneratingPdf,
-
-                    onClick = {
-                        generatePdf()
-                    }
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isGeneratingPdf,
+                    onClick = ::generatePdf
                 ) {
-
-                    if (isGeneratingPdf) {
-
-                        CircularProgressIndicator(
-                            modifier =
-                                Modifier.height(20.dp)
-                        )
-
-                    } else {
-
-                        Text(
-                            "📄 Generate PDF"
-                        )
-                    }
+                    if (isGeneratingPdf) CircularProgressIndicator(modifier = Modifier.height(20.dp))
+                    else Text("📄 Generate PDF")
                 }
             }
-
-            // ==================================================
-            // PDF ERROR
-            // ==================================================
 
             if (pdfError != null) {
-
                 item {
-
-                    Card(
-                        modifier =
-                            Modifier.fillMaxWidth()
-                    ) {
-
-                        Text(
-                            text =
-                                pdfError
-                                    ?: "",
-
-                            modifier =
-                                Modifier.padding(16.dp)
-                        )
+                    Card(Modifier.fillMaxWidth()) {
+                        Text(pdfError ?: "", Modifier.padding(16.dp))
                     }
                 }
             }
-
-            // ==================================================
-            // TRANSACTION HISTORY
-            // ==================================================
 
             item {
-
-                Text(
-                    text =
-                        "Transaction History",
-
-                    style =
-                        MaterialTheme.typography
-                            .titleLarge,
-
-                    fontWeight =
-                        FontWeight.Bold
-                )
+                Text("Transaction History", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
 
-            // ==================================================
-            // EMPTY TRANSACTION
-            // ==================================================
-
             if (transactions.isEmpty()) {
-
                 item {
-
-                    Card(
-                        modifier =
-                            Modifier.fillMaxWidth()
-                    ) {
-
-                        Column(
-                            modifier =
-                                Modifier.padding(20.dp)
-                        ) {
-
-                            Text(
-                                text =
-                                    "No transactions yet."
-                            )
-
-                            Spacer(
-                                modifier =
-                                    Modifier.height(4.dp)
-                            )
-
-                            Text(
-                                text =
-                                    "Add Udhar or Payment to see history."
-                            )
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(20.dp)) {
+                            Text("No transactions yet.")
+                            Spacer(Modifier.height(4.dp))
+                            Text("Add Udhar or Payment to see history.")
                         }
                     }
                 }
-
             } else {
-
-                items(
-                    count =
-                        transactions.size
-                ) { index ->
-
-                    val transaction =
-                        transactions[index]
-
+                items(transactions.size) { index ->
+                    val transaction = transactions[index]
                     TransactionCard(
-                        transaction =
-                            transaction,
-
-                        onEdit = {
-
-                            transactionToEdit =
-                                transaction
-                        },
-
-                        onDelete = {
-
-                            transactionToDelete =
-                                transaction
-                        }
+                        transaction = transaction,
+                        onEdit = { transactionToEdit = transaction },
+                        onDelete = { transactionToDelete = transaction }
                     )
                 }
             }
         }
     }
 
-    // ==================================================
-    // DELETE CUSTOMER CONFIRMATION
-    // ==================================================
-
     if (showDeleteDialog) {
-
         AlertDialog(
-
-            onDismissRequest = {
-                showDeleteDialog = false
-            },
-
-            title = {
-                Text(
-                    "Delete Customer?"
-                )
-            },
-
-            text = {
-
-                Text(
-                    "क्या आप \"$customerName\" को delete करना चाहते हैं?"
-                )
-            },
-
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Customer?") },
+            text = { Text("क्या आप \"$customerName\" को delete करना चाहते हैं?") },
             confirmButton = {
-
-                TextButton(
-
-                    onClick = {
-
-                        showDeleteDialog = false
-
-                        onDeleteCustomer()
-                    }
-                ) {
-
-                    Text(
-                        "Delete"
-                    )
-                }
+                TextButton(onClick = {
+                    showDeleteDialog = false
+                    onDeleteCustomer()
+                }) { Text("Delete") }
             },
-
             dismissButton = {
-
-                TextButton(
-
-                    onClick = {
-                        showDeleteDialog = false
-                    }
-                ) {
-
-                    Text(
-                        "Cancel"
-                    )
-                }
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
             }
         )
     }
-
-    // ==================================================
-    // DELETE TRANSACTION CONFIRMATION
-    // ==================================================
 
     transactionToDelete?.let { transaction ->
-
         AlertDialog(
-
-            onDismissRequest = {
-                transactionToDelete = null
-            },
-
-            title = {
-                Text("Delete Transaction?")
-            },
-
-            text = {
-
-                Text(
-                    "क्या आप इस ${transaction.type} transaction को delete करना चाहते हैं?\n\n" +
-                            "Amount: ${formatAmount(transaction.amount)}"
-                )
-            },
-
+            onDismissRequest = { transactionToDelete = null },
+            title = { Text("Delete Transaction?") },
+            text = { Text("क्या आप इस ${transaction.type} transaction को delete करना चाहते हैं?\n\nAmount: ${formatAmount(transaction.amount)}") },
             confirmButton = {
-
-                TextButton(
-
-                    onClick = {
-
-                        onDeleteTransaction(
-                            transaction
-                        )
-
-                        transactionToDelete = null
-                    }
-                ) {
-
-                    Text("Delete")
-                }
+                TextButton(onClick = {
+                    onDeleteTransaction(transaction)
+                    transactionToDelete = null
+                }) { Text("Delete") }
             },
-
             dismissButton = {
-
-                TextButton(
-
-                    onClick = {
-                        transactionToDelete = null
-                    }
-                ) {
-
-                    Text("Cancel")
-                }
+                TextButton(onClick = { transactionToDelete = null }) { Text("Cancel") }
             }
         )
     }
-
-    // ==================================================
-    // EDIT TRANSACTION DIALOG
-    // ==================================================
 
     transactionToEdit?.let { transaction ->
-
         EditTransactionDialog(
-
             transaction = transaction,
-
-            onDismiss = {
-                transactionToEdit = null
-            },
-
-            onSave = { updatedTransaction ->
-
-                onEditTransaction(
-                    updatedTransaction
-                )
-
+            onDismiss = { transactionToEdit = null },
+            onSave = {
+                onEditTransaction(it)
                 transactionToEdit = null
             }
         )
     }
 
-    // ==================================================
-    // PDF PREVIEW
-    // ==================================================
-
     if (showPdfPreview && pdfFile != null) {
-
         PdfPreviewDialog(
-
             file = pdfFile!!,
-
-            onDismiss = {
-                showPdfPreview = false
-            },
-
-            onShare = {
-
-                sharePdf(
-                    context = context,
-                    file = pdfFile!!
-                )
-            }
+            onDismiss = { showPdfPreview = false },
+            onShare = { sharePdf(context, pdfFile!!) }
         )
     }
 }
 
-
-// ==========================================================
-// EDIT TRANSACTION DIALOG
-// ==========================================================
-
 @Composable
-private fun EditTransactionDialog(
-    transaction: Transaction,
-    onDismiss: () -> Unit,
-    onSave: (Transaction) -> Unit
-) {
-
+private fun EditTransactionDialog(transaction: Transaction, onDismiss: () -> Unit, onSave: (Transaction) -> Unit) {
     val context = LocalContext.current
-
-    val calendar =
-        remember(transaction.id) {
-
-            Calendar.getInstance().apply {
-                timeInMillis =
-                    transaction.timestamp
-            }
-        }
-
-    var selectedDate by remember(
-        transaction.id
-    ) {
-
-        mutableStateOf(
-            SimpleDateFormat(
-                "dd MMM yyyy",
-                Locale.getDefault()
-            ).format(
-                Date(
-                    transaction.timestamp
-                )
-            )
-        )
-    }
-
-    var selectedTime by remember(
-        transaction.id
-    ) {
-
-        mutableStateOf(
-            SimpleDateFormat(
-                "hh:mm a",
-                Locale.getDefault()
-            ).format(
-                Date(
-                    transaction.timestamp
-                )
-            )
-        )
-    }
-
-    var amountText by remember(
-        transaction.id
-    ) {
-
-        mutableStateOf(
-            transaction.amount.toString()
-        )
-    }
-
-    var noteText by remember(
-        transaction.id
-    ) {
-
-        mutableStateOf(
-            transaction.note
-        )
-    }
-
-    var type by remember(
-        transaction.id
-    ) {
-
-        mutableStateOf(
-            transaction.type
-        )
-    }
-
-    var errorMessage by remember {
-        mutableStateOf<String?>(null)
-    }
+    val calendar = remember(transaction.id) { Calendar.getInstance().apply { timeInMillis = transaction.timestamp } }
+    var selectedDate by remember(transaction.id) { mutableStateOf(SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(transaction.timestamp))) }
+    var selectedTime by remember(transaction.id) { mutableStateOf(SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(transaction.timestamp))) }
+    var amountText by remember(transaction.id) { mutableStateOf(transaction.amount.toString()) }
+    var noteText by remember(transaction.id) { mutableStateOf(transaction.note) }
+    var type by remember(transaction.id) { mutableStateOf(transaction.type) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     fun showDatePicker() {
-
-        val datePicker =
-            DatePickerDialog(
-
-                context,
-
-                { _, year, month, dayOfMonth ->
-
-                    calendar.set(
-                        Calendar.YEAR,
-                        year
-                    )
-
-                    calendar.set(
-                        Calendar.MONTH,
-                        month
-                    )
-
-                    calendar.set(
-                        Calendar.DAY_OF_MONTH,
-                        dayOfMonth
-                    )
-
-                    selectedDate =
-                        SimpleDateFormat(
-                            "dd MMM yyyy",
-                            Locale.getDefault()
-                        ).format(
-                            calendar.time
-                        )
-                },
-
-                calendar.get(
-                    Calendar.YEAR
-                ),
-
-                calendar.get(
-                    Calendar.MONTH
-                ),
-
-                calendar.get(
-                    Calendar.DAY_OF_MONTH
-                )
-            )
-
-        datePicker.show()
+        DatePickerDialog(context, { _, year, month, dayOfMonth ->
+            calendar.set(Calendar.YEAR, year); calendar.set(Calendar.MONTH, month); calendar.set(Calendar.DAY_OF_MONTH, dayOfMonth)
+            selectedDate = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(calendar.time)
+        }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
     }
 
     fun showTimePicker() {
-
-        val timePicker =
-            TimePickerDialog(
-
-                context,
-
-                { _, hourOfDay, minute ->
-
-                    calendar.set(
-                        Calendar.HOUR_OF_DAY,
-                        hourOfDay
-                    )
-
-                    calendar.set(
-                        Calendar.MINUTE,
-                        minute
-                    )
-
-                    calendar.set(
-                        Calendar.SECOND,
-                        0
-                    )
-
-                    calendar.set(
-                        Calendar.MILLISECOND,
-                        0
-                    )
-
-                    selectedTime =
-                        SimpleDateFormat(
-                            "hh:mm a",
-                            Locale.getDefault()
-                        ).format(
-                            calendar.time
-                        )
-                },
-
-                calendar.get(
-                    Calendar.HOUR_OF_DAY
-                ),
-
-                calendar.get(
-                    Calendar.MINUTE
-                ),
-
-                false
-            )
-
-        timePicker.show()
+        TimePickerDialog(context, { _, hourOfDay, minute ->
+            calendar.set(Calendar.HOUR_OF_DAY, hourOfDay); calendar.set(Calendar.MINUTE, minute); calendar.set(Calendar.SECOND, 0); calendar.set(Calendar.MILLISECOND, 0)
+            selectedTime = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(calendar.time)
+        }, calendar.get(Calendar.HOUR_OF_DAY), calendar.get(Calendar.MINUTE), false).show()
     }
 
     AlertDialog(
-
         onDismissRequest = onDismiss,
-
-        title = {
-            Text("Edit Transaction")
-        },
-
+        title = { Text("Edit Transaction") },
         text = {
-
             Column {
-
-                Text(
-                    text =
-                        "Transaction Type",
-
-                    fontWeight =
-                        FontWeight.Bold
-                )
-
-                Spacer(
-                    modifier =
-                        Modifier.height(8.dp)
-                )
-
-                Row(
-                    horizontalArrangement =
-                        Arrangement.spacedBy(8.dp)
-                ) {
-
-                    if (
-                        type.equals(
-                            "UDHAR",
-                            ignoreCase = true
-                        )
-                    ) {
-
-                        Button(
-                            onClick = {
-                                type = "UDHAR"
-                            },
-
-                            colors =
-                                ButtonDefaults.buttonColors(
-                                    containerColor =
-                                        UdharGreen
-                                )
-                        ) {
-
-                            Text(
-                                "Udhar"
-                            )
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                type = "PAYMENT"
-                            }
-                        ) {
-
-                            Text(
-                                "Payment",
-                                color = PaymentRed
-                            )
-                        }
-
+                Text("Transaction Type", fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (type.equals("UDHAR", true)) {
+                        Button(onClick = { type = "UDHAR" }, colors = ButtonDefaults.buttonColors(containerColor = UdharGreen)) { Text("Udhar") }
+                        OutlinedButton(onClick = { type = "PAYMENT" }) { Text("Payment", color = PaymentRed) }
                     } else {
-
-                        OutlinedButton(
-                            onClick = {
-                                type = "UDHAR"
-                            }
-                        ) {
-
-                            Text(
-                                "Udhar",
-                                color = UdharGreen
-                            )
-                        }
-
-                        Button(
-                            onClick = {
-                                type = "PAYMENT"
-                            },
-
-                            colors =
-                                ButtonDefaults.buttonColors(
-                                    containerColor =
-                                        PaymentRed
-                                )
-                        ) {
-
-                            Text(
-                                "Payment"
-                            )
-                        }
+                        OutlinedButton(onClick = { type = "UDHAR" }) { Text("Udhar", color = UdharGreen) }
+                        Button(onClick = { type = "PAYMENT" }, colors = ButtonDefaults.buttonColors(containerColor = PaymentRed)) { Text("Payment") }
                     }
                 }
-
-                Spacer(
-                    modifier =
-                        Modifier.height(12.dp)
-                )
-
-                OutlinedTextField(
-
-                    value =
-                        amountText,
-
-                    onValueChange = {
-
-                        amountText = it
-
-                        errorMessage = null
-                    },
-
-                    label = {
-                        Text("Amount")
-                    },
-
-                    singleLine = true,
-
-                    modifier =
-                        Modifier.fillMaxWidth()
-                )
-
-                Spacer(
-                    modifier =
-                        Modifier.height(12.dp)
-                )
-
-                OutlinedButton(
-
-                    onClick = {
-                        showDatePicker()
-                    },
-
-                    modifier =
-                        Modifier.fillMaxWidth()
-                ) {
-
-                    Text(
-                        "📅 Date: $selectedDate"
-                    )
-                }
-
-                Spacer(
-                    modifier =
-                        Modifier.height(8.dp)
-                )
-
-                OutlinedButton(
-
-                    onClick = {
-                        showTimePicker()
-                    },
-
-                    modifier =
-                        Modifier.fillMaxWidth()
-                ) {
-
-                    Text(
-                        "🕐 Time: $selectedTime"
-                    )
-                }
-
-                Spacer(
-                    modifier =
-                        Modifier.height(12.dp)
-                )
-
-                OutlinedTextField(
-
-                    value =
-                        noteText,
-
-                    onValueChange = {
-                        noteText = it
-                    },
-
-                    label = {
-                        Text("Note")
-                    },
-
-                    modifier =
-                        Modifier.fillMaxWidth()
-                )
-
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(amountText, { amountText = it; errorMessage = null }, label = { Text("Amount") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(onClick = ::showDatePicker, modifier = Modifier.fillMaxWidth()) { Text("📅 Date: $selectedDate") }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = ::showTimePicker, modifier = Modifier.fillMaxWidth()) { Text("🕐 Time: $selectedTime") }
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(noteText, { noteText = it }, label = { Text("Note") }, modifier = Modifier.fillMaxWidth())
                 if (errorMessage != null) {
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(8.dp)
-                    )
-
-                    Text(
-                        text =
-                            errorMessage!!,
-
-                        color =
-                            MaterialTheme
-                                .colorScheme
-                                .error
-                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(errorMessage!!, color = MaterialTheme.colorScheme.error)
                 }
             }
         },
-
         confirmButton = {
-
-            TextButton(
-
-                onClick = {
-
-                    val amount =
-                        amountText.toDoubleOrNull()
-
-                    if (
-                        amount == null ||
-                        amount <= 0
-                    ) {
-
-                        errorMessage =
-                            "Valid amount डालें।"
-
-                        return@TextButton
-                    }
-
-                    val updatedTransaction =
-                        transaction.copy(
-
-                            amount =
-                                amount,
-
-                            type =
-                                type,
-
-                            note =
-                                noteText,
-
-                            timestamp =
-                                calendar.timeInMillis
-                        )
-
-                    onSave(
-                        updatedTransaction
-                    )
+            TextButton(onClick = {
+                val amount = amountText.toDoubleOrNull()
+                if (amount == null || amount <= 0) {
+                    errorMessage = "Valid amount डालें।"
+                    return@TextButton
                 }
-            ) {
-
-                Text(
-                    "Save"
-                )
-            }
+                onSave(transaction.copy(amount = amount, type = type, note = noteText, timestamp = calendar.timeInMillis))
+            }) { Text("Save") }
         },
-
-        dismissButton = {
-
-            TextButton(
-                onClick = onDismiss
-            ) {
-
-                Text(
-                    "Cancel"
-                )
-            }
-        }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 
-
-// ==========================================================
-// PDF PREVIEW DIALOG
-// ==========================================================
-
 @Composable
-private fun PdfPreviewDialog(
-    file: File,
-    onDismiss: () -> Unit,
-    onShare: () -> Unit
-) {
-
-    var bitmap by remember {
-        mutableStateOf<Bitmap?>(null)
-    }
-
+private fun PdfPreviewDialog(file: File, onDismiss: () -> Unit, onShare: () -> Unit) {
+    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(file) {
-
         try {
-
-            val descriptor =
-                ParcelFileDescriptor.open(
-                    file,
-                    ParcelFileDescriptor.MODE_READ_ONLY
-                )
-
-            val renderer =
-                PdfRenderer(descriptor)
-
+            val descriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+            val renderer = PdfRenderer(descriptor)
             if (renderer.pageCount > 0) {
-
-                val page =
-                    renderer.openPage(0)
-
-                val pageBitmap =
-                    Bitmap.createBitmap(
-                        page.width * 2,
-                        page.height * 2,
-                        Bitmap.Config.ARGB_8888
-                    )
-
-                page.render(
-                    pageBitmap,
-                    null,
-                    null,
-                    PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
-                )
-
-                page.close()
-                renderer.close()
-                descriptor.close()
-
+                val page = renderer.openPage(0)
+                val pageBitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
+                page.render(pageBitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                page.close(); renderer.close(); descriptor.close()
                 bitmap = pageBitmap
             }
-
-        } catch (_: Exception) {
-
-            bitmap = null
-        }
+        } catch (_: Exception) { bitmap = null }
     }
-
     AlertDialog(
-
         onDismissRequest = onDismiss,
-
-        title = {
-            Text(
-                "PDF Preview"
-            )
-        },
-
+        title = { Text("PDF Preview") },
         text = {
-
-            Box(
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                contentAlignment =
-                    Alignment.Center
-            ) {
-
-                if (bitmap != null) {
-
-                    Image(
-                        bitmap =
-                            bitmap!!.asImageBitmap(),
-
-                        contentDescription =
-                            "PDF Preview",
-
-                        modifier =
-                            Modifier.fillMaxWidth()
-                    )
-
-                } else {
-
-                    CircularProgressIndicator()
-                }
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                if (bitmap != null) Image(bitmap!!.asImageBitmap(), "PDF Preview", Modifier.fillMaxWidth())
+                else CircularProgressIndicator()
             }
         },
-
-        confirmButton = {
-
-            TextButton(
-                onClick = onShare
-            ) {
-
-                Text(
-                    "Share"
-                )
-            }
-        },
-
-        dismissButton = {
-
-            TextButton(
-                onClick = onDismiss
-            ) {
-
-                Text(
-                    "Close"
-                )
-            }
-        }
+        confirmButton = { TextButton(onClick = onShare) { Text("Share") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
 }
 
-
-// ==========================================================
-// SHARE PDF
-// ==========================================================
-
-private fun sharePdf(
-    context: Context,
-    file: File
-) {
-
+private fun sharePdf(context: Context, file: File) {
     try {
-
-        val uri: Uri =
-            FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                file
-            )
-
-        val intent =
-            Intent(
-                Intent.ACTION_SEND
-            ).apply {
-
-                type =
-                    "application/pdf"
-
-                putExtra(
-                    Intent.EXTRA_STREAM,
-                    uri
-                )
-
-                addFlags(
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            }
-
-        context.startActivity(
-            Intent.createChooser(
-                intent,
-                "Share PDF"
-            )
-        )
-
-    } catch (e: Exception) {
-
-        e.printStackTrace()
-    }
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "Share PDF"))
+    } catch (e: Exception) { e.printStackTrace() }
 }
-
-
-// ==========================================================
-// SUMMARY CARD
-// ==========================================================
 
 @Composable
-private fun SummaryCard(
-    title: String,
-    amount: Double,
-    titleColor: Color,
-    amountColor: Color,
-    modifier: Modifier = Modifier
-) {
-
-    Card(
-
-        modifier = modifier,
-
-        elevation =
-            CardDefaults.cardElevation(
-                defaultElevation = 4.dp
-            )
-    ) {
-
-        Column(
-            modifier =
-                Modifier.padding(16.dp)
-        ) {
-
-            Text(
-                text =
-                    title,
-
-                color =
-                    titleColor,
-
-                style =
-                    MaterialTheme.typography
-                        .bodyMedium,
-
-                fontWeight =
-                    FontWeight.Bold
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.height(6.dp)
-            )
-
-            Text(
-                text =
-                    formatAmount(
-                        amount
-                    ),
-
-                color =
-                    amountColor,
-
-                fontSize =
-                    20.sp,
-
-                fontWeight =
-                    FontWeight.Bold
-            )
+private fun SummaryCard(title: String, amount: Double, titleColor: Color, amountColor: Color, modifier: Modifier = Modifier) {
+    Card(modifier = modifier, elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            Text(title, color = titleColor, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Text(formatAmount(amount), color = amountColor, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
-
-
-// ==========================================================
-// TRANSACTION CARD
-// ==========================================================
 
 @Composable
-private fun TransactionCard(
-    transaction: Transaction,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit
-) {
-
-    val isUdhar =
-        transaction.type.equals(
-            "UDHAR",
-            ignoreCase = true
-        )
-
-    val typeText =
-        if (isUdhar) {
-            "Udhar"
-        } else {
-            "Payment"
-        }
-
-    val transactionColor =
-        if (isUdhar) {
-            UdharGreen
-        } else {
-            PaymentRed
-        }
-
-    val dateText =
-        formatDate(
-            transaction.timestamp
-        )
-
-    Card(
-
-        modifier =
-            Modifier.fillMaxWidth(),
-
-        elevation =
-            CardDefaults.cardElevation(
-                defaultElevation = 3.dp
-            )
-    ) {
-
-        Column(
-            modifier =
-                Modifier.padding(16.dp)
-        ) {
-
-            // ==================================================
-            // TYPE + AMOUNT
-            // ==================================================
-
-            Row(
-
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                horizontalArrangement =
-                    Arrangement.SpaceBetween,
-
-                verticalAlignment =
-                    Alignment.CenterVertically
-            ) {
-
-                Text(
-                    text =
-                        typeText,
-
-                    color =
-                        transactionColor,
-
-                    fontWeight =
-                        FontWeight.Bold,
-
-                    fontSize =
-                        18.sp
-                )
-
-                Text(
-                    text =
-                        formatAmount(
-                            transaction.amount
-                        ),
-
-                    color =
-                        transactionColor,
-
-                    fontSize =
-                        20.sp,
-
-                    fontWeight =
-                        FontWeight.Bold
-                )
+private fun TransactionCard(transaction: Transaction, onEdit: () -> Unit, onDelete: () -> Unit) {
+    val isUdhar = transaction.type.equals("UDHAR", true)
+    val typeText = if (isUdhar) "Udhar" else "Payment"
+    val transactionColor = if (isUdhar) UdharGreen else PaymentRed
+    Card(Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(typeText, color = transactionColor, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(formatAmount(transaction.amount), color = transactionColor, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             }
-
-            Spacer(
-                modifier =
-                    Modifier.height(6.dp)
-            )
-
-            Text(
-                text =
-                    dateText,
-
-                style =
-                    MaterialTheme.typography
-                        .bodySmall
-            )
-
-            if (
-                transaction.note.isNotBlank()
-            ) {
-
-                Spacer(
-                    modifier =
-                        Modifier.height(6.dp)
-                )
-
-                Text(
-                    text =
-                        "Note: ${transaction.note}"
-                )
+            Spacer(Modifier.height(6.dp))
+            Text(formatDate(transaction.timestamp), style = MaterialTheme.typography.bodySmall)
+            if (transaction.note.isNotBlank()) {
+                Spacer(Modifier.height(6.dp))
+                Text("Note: ${transaction.note}")
             }
-
-            Spacer(
-                modifier =
-                    Modifier.height(12.dp)
-            )
-
-            Row(
-
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                horizontalArrangement =
-                    Arrangement.End,
-
-                verticalAlignment =
-                    Alignment.CenterVertically
-            ) {
-
-                OutlinedButton(
-                    onClick = onEdit
-                ) {
-
-                    Text(
-                        "✏️ Edit"
-                    )
-                }
-
-                Spacer(
-                    modifier =
-                        Modifier.padding(
-                            horizontal = 4.dp
-                        )
-                )
-
-                TextButton(
-                    onClick = onDelete
-                ) {
-
-                    Text(
-                        "🗑 Delete",
-
-                        color =
-                            MaterialTheme
-                                .colorScheme
-                                .error
-                    )
-                }
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = onEdit) { Text("✏️ Edit") }
+                Spacer(Modifier.padding(horizontal = 4.dp))
+                TextButton(onClick = onDelete) { Text("🗑 Delete", color = MaterialTheme.colorScheme.error) }
             }
         }
     }
 }
 
+private fun formatAmount(amount: Double): String = "₹%.2f".format(Locale.US, amount)
 
-// ==========================================================
-// AMOUNT FORMAT
-// ==========================================================
-
-private fun formatAmount(
-    amount: Double
-): String {
-
-    return "₹%.2f".format(
-        Locale.US,
-        amount
-    )
-}
-
-
-// ==========================================================
-// DATE FORMAT
-// ==========================================================
-
-private fun formatDate(
-    timestamp: Long
-): String {
-
-    val formatter =
-        SimpleDateFormat(
-            "dd MMM yyyy, hh:mm a",
-            Locale.getDefault()
-        )
-
-    return formatter.format(
-        Date(timestamp)
-    )
-}
+private fun formatDate(timestamp: Long): String = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date(timestamp))
