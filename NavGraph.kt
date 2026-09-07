@@ -96,8 +96,11 @@ fun AJNavGraph(
             val transactions by transactionViewModel.getTransactionsByCustomer(id).collectAsState(initial = emptyList())
             if (customer != null) {
                 CustomerDetailsScreen(
-                    customerName = customer!!.name, mobile = customer!!.mobile, address = customer!!.address,
+                    customerName = customer!!.name,
+                    mobile = customer!!.mobile,
+                    address = customer!!.address,
                     transactions = transactions,
+                    sharedLedgerId = customer!!.sharedLedgerId,
                     onAddUdhar = { navController.navigate(Screen.AddTransaction.createRoute(id, "UDHAR")) },
                     onAddPayment = { navController.navigate(Screen.AddTransaction.createRoute(id, "PAYMENT")) },
                     onEditCustomer = { navController.navigate(Screen.EditCustomer.createRoute(id)) },
