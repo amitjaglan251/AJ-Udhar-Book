@@ -105,17 +105,19 @@ class FirestoreSyncManager(
         }
         if (customerDao.getAllCustomersOnce().isEmpty() && cloudCustomers.isNotEmpty()) customerDao.insertAll(cloudCustomers)
         if (transactionDao.getAllTransactionsOnce().isEmpty() && cloudTransactions.isNotEmpty()) transactionDao.insertAll(cloudTransactions)
-        cloudCustomers.filter { it.sharedLedgerId.matches(Regex("\\d{6}")) }.forEach { customer ->
-            syncSharedLedgerToLocal(customer.sharedLedgerId, customer.id)
-            listenToSharedLedger(customer.sharedLedgerId, customer.id)
+        cloudCustomers.filter { SharedLedgerSecurity.isValidCode(it.sharedLedgerId) }.forEach { customer ->
+            try {
+                syncSharedLedgerToLocal(customer.sharedLedgerId, customer.id)
+                listenToSharedLedger(customer.sharedLedgerId, customer.id)
+            } catch (_: Exception) { }
         }
     }
 
     suspend fun createShareCode(customer: Customer): String {
         if (!isUserSignedIn()) throw IllegalStateException("Login required")
-        val existing = customer.sharedLedgerId.trim()
-        val code = if (existing.matches(Regex("\\d{6}"))) existing else findAvailableCode()
         val uid = getCurrentUserId() ?: throw IllegalStateException("Login required")
+        val existing = customer.sharedLedgerId.trim()
+        val code = if (SharedLedgerSecurity.isValidCode(existing)) existing else findAvailableCode()
         val ledgerRef = firestore.collection("sharedLedgers").document(code)
         val existingLedger = ledgerRef.get().await()
         if (!existingLedger.exists()) {
@@ -124,12 +126,8 @@ class FirestoreSyncManager(
                 "customerName" to customer.name, "mobile" to customer.mobile.filter(Char::isDigit).takeLast(10),
                 "address" to customer.address, "participantUids" to listOf(uid), "createdAt" to System.currentTimeMillis()
             )).await()
-        } else {
-            val participants = (existingLedger.get("participantUids") as? List<*>)?.filterIsInstance<String>()?.toMutableList() ?: mutableListOf()
-            if (!participants.contains(uid)) {
-                participants.add(uid)
-                ledgerRef.update("participantUids", participants).await()
-            }
+        } else if (existingLedger.getString("ownerUid") != uid) {
+            throw IllegalStateException("Only the ledger owner can create or resend the invite")
         }
         val updatedCustomer = customer.copy(sharedLedgerId = code)
         customerDao.update(updatedCustomer)
@@ -158,19 +156,46 @@ class FirestoreSyncManager(
         }
     }
 
-    suspend fun joinShareCode(codeInput: String): Customer {
+    suspend fun requestJoinShareCode(codeInput: String): String {
         if (!isUserSignedIn()) throw IllegalStateException("Login required")
         val code = codeInput.filter(Char::isDigit)
-        if (!code.matches(Regex("\\d{6}"))) throw IllegalArgumentException("Enter a valid 6-digit code")
+        if (!SharedLedgerSecurity.isValidCode(code)) throw IllegalArgumentException("Enter a valid 6-digit code")
         val uid = getCurrentUserId() ?: throw IllegalStateException("Login required")
+        val requestRef = firestore.collection("sharedLedgers").document(code).collection("joinRequests").document(uid)
+        val existing = requestRef.get().await()
+        if (existing.exists()) return existing.getString("status") ?: SharedLedgerSecurity.PENDING
+        requestRef.set(hashMapOf<String, Any>(
+            "ledgerCode" to code,
+            "requesterUid" to uid,
+            "requesterName" to (auth.currentUser?.displayName ?: "App User"),
+            "status" to SharedLedgerSecurity.PENDING,
+            "createdAt" to System.currentTimeMillis()
+        )).await()
+        return SharedLedgerSecurity.PENDING
+    }
+
+    suspend fun getJoinRequestStatus(codeInput: String): String? {
+        if (!isUserSignedIn()) throw IllegalStateException("Login required")
+        val code = codeInput.filter(Char::isDigit)
+        if (!SharedLedgerSecurity.isValidCode(code)) throw IllegalArgumentException("Enter a valid 6-digit code")
+        val uid = getCurrentUserId() ?: throw IllegalStateException("Login required")
+        val snapshot = firestore.collection("sharedLedgers").document(code).collection("joinRequests").document(uid).get().await()
+        return if (snapshot.exists()) snapshot.getString("status") else null
+    }
+
+    suspend fun completeApprovedJoin(codeInput: String): Customer {
+        if (!isUserSignedIn()) throw IllegalStateException("Login required")
+        val code = codeInput.filter(Char::isDigit)
+        if (!SharedLedgerSecurity.isValidCode(code)) throw IllegalArgumentException("Enter a valid 6-digit code")
+        val uid = getCurrentUserId() ?: throw IllegalStateException("Login required")
+        val requestRef = firestore.collection("sharedLedgers").document(code).collection("joinRequests").document(uid)
+        val request = requestRef.get().await()
+        if (!request.exists() || request.getString("status") != SharedLedgerSecurity.APPROVED) {
+            throw IllegalStateException("Owner approval is still pending")
+        }
         val ledgerRef = firestore.collection("sharedLedgers").document(code)
         val snapshot = ledgerRef.get().await()
-        if (!snapshot.exists()) throw IllegalArgumentException("Share code not found")
-        val participants = (snapshot.get("participantUids") as? List<*>)?.filterIsInstance<String>()?.toMutableList() ?: mutableListOf()
-        if (!participants.contains(uid)) {
-            participants.add(uid)
-            ledgerRef.update("participantUids", participants).await()
-        }
+        if (!snapshot.exists()) throw IllegalArgumentException("Shared ledger no longer exists")
         val name = snapshot.getString("customerName") ?: "Shared Customer"
         val mobile = snapshot.getString("mobile") ?: ""
         val address = snapshot.getString("address") ?: ""
@@ -187,11 +212,56 @@ class FirestoreSyncManager(
         return customer
     }
 
+    suspend fun getOwnedJoinRequests(): List<SharedJoinRequest> {
+        if (!isUserSignedIn()) throw IllegalStateException("Login required")
+        val uid = getCurrentUserId() ?: throw IllegalStateException("Login required")
+        val codes = customerDao.getAllCustomersOnce().map { it.sharedLedgerId }
+            .filter { SharedLedgerSecurity.isValidCode(it) }.distinct()
+        val results = mutableListOf<SharedJoinRequest>()
+        codes.forEach { code ->
+            val ledger = firestore.collection("sharedLedgers").document(code).get().await()
+            if (ledger.getString("ownerUid") != uid) return@forEach
+            val requests = ledger.reference.collection("joinRequests").get().await()
+            requests.documents.forEach { doc ->
+                results.add(SharedJoinRequest(
+                    ledgerCode = code,
+                    requesterUid = doc.getString("requesterUid") ?: doc.id,
+                    requesterName = doc.getString("requesterName") ?: "App User",
+                    status = doc.getString("status") ?: SharedLedgerSecurity.PENDING,
+                    createdAt = doc.getLong("createdAt") ?: 0L
+                ))
+            }
+        }
+        return results.sortedByDescending { it.createdAt }
+    }
+
+    suspend fun approveJoinRequest(request: SharedJoinRequest) {
+        updateJoinRequest(request, SharedLedgerSecurity.APPROVED)
+    }
+
+    suspend fun rejectJoinRequest(request: SharedJoinRequest) {
+        updateJoinRequest(request, SharedLedgerSecurity.REJECTED)
+    }
+
+    private suspend fun updateJoinRequest(request: SharedJoinRequest, status: String) {
+        if (!isUserSignedIn()) throw IllegalStateException("Login required")
+        val uid = getCurrentUserId() ?: throw IllegalStateException("Login required")
+        val ledgerRef = firestore.collection("sharedLedgers").document(request.ledgerCode)
+        val ledger = ledgerRef.get().await()
+        if (ledger.getString("ownerUid") != uid) throw IllegalStateException("Only the ledger owner can approve requests")
+        if (status == SharedLedgerSecurity.APPROVED) {
+            val participants = (ledger.get("participantUids") as? List<*>)?.filterIsInstance<String>()?.toMutableList() ?: mutableListOf()
+            if (!participants.contains(request.requesterUid)) participants.add(request.requesterUid)
+            ledgerRef.update("participantUids", participants).await()
+        }
+        ledgerRef.collection("joinRequests").document(request.requesterUid).update("status", status).await()
+    }
+
     suspend fun syncSharedLedgerTransaction(transaction: Transaction) {
         if (transaction.syncKey.isBlank() || !isUserSignedIn()) return
         val customer = customerDao.getCustomerByIdOnce(transaction.customerId) ?: return
         val code = customer.sharedLedgerId.trim()
-        if (!code.matches(Regex("\\d{6}"))) return
+        if (!SharedLedgerSecurity.isValidCode(code)) return
         firestore.collection("sharedLedgers").document(code).collection("transactions").document(transaction.syncKey)
             .set(transactionMap(transaction)).await()
     }
@@ -200,7 +270,7 @@ class FirestoreSyncManager(
         if (transaction.syncKey.isBlank() || !isUserSignedIn()) return
         val customer = customerDao.getCustomerByIdOnce(transaction.customerId) ?: return
         val code = customer.sharedLedgerId.trim()
-        if (!code.matches(Regex("\\d{6}"))) return
+        if (!SharedLedgerSecurity.isValidCode(code)) return
         firestore.collection("sharedLedgers").document(code).collection("transactions").document(transaction.syncKey).delete().await()
     }
 
@@ -210,6 +280,7 @@ class FirestoreSyncManager(
     )
 
     suspend fun syncSharedLedgerToLocal(code: String, localCustomerId: Int) {
+        if (!SharedLedgerSecurity.isValidCode(code)) return
         val snapshot = firestore.collection("sharedLedgers").document(code).collection("transactions").get().await()
         val current = transactionDao.getTransactionsByCustomerOnce(localCustomerId).associateBy { it.syncKey }
         snapshot.documents.forEach { doc ->
@@ -225,7 +296,7 @@ class FirestoreSyncManager(
     }
 
     fun listenToSharedLedger(code: String, localCustomerId: Int) {
-        if (!isUserSignedIn() || !code.matches(Regex("\\d{6}"))) return
+        if (!isUserSignedIn() || !SharedLedgerSecurity.isValidCode(code)) return
         sharedListeners.remove(code)?.remove()
         sharedListeners[code] = firestore.collection("sharedLedgers").document(code).collection("transactions")
             .addSnapshotListener { snapshot, error ->
@@ -249,9 +320,7 @@ class FirestoreSyncManager(
                                     syncKey = syncKey
                                 ))
                             }
-                            com.google.firebase.firestore.DocumentChange.Type.REMOVED -> {
-                                transactionDao.deleteBySyncKey(syncKey)
-                            }
+                            com.google.firebase.firestore.DocumentChange.Type.REMOVED -> transactionDao.deleteBySyncKey(syncKey)
                         }
                     }
                 }
