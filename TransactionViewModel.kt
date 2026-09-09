@@ -17,20 +17,28 @@ class TransactionViewModel(
     val allTransactions = repository.allTransactions
 
     fun insert(transaction: Transaction, onCompleted: (Double) -> Unit = {}) = viewModelScope.launch {
-        val customer = try { firestoreSyncManager.getCustomerByIdOnce(transaction.customerId) } catch (_: Exception) { null }
-        val shared = customer?.sharedLedgerId?.matches(Regex("\\d{6}")) == true
-        val syncKey = if (shared && transaction.syncKey.isBlank()) UUID.randomUUID().toString() else transaction.syncKey
-        val prepared = transaction.copy(syncKey = syncKey)
+        // Every new transaction gets a stable cloud identity. This is required so
+        // the same transaction can be mirrored on both phones without relying on
+        // Room's device-local integer primary key.
+        val prepared = if (transaction.syncKey.isBlank()) {
+            transaction.copy(syncKey = UUID.randomUUID().toString())
+        } else transaction
+
         val generatedId = repository.insert(prepared)
         val savedTransaction = prepared.copy(id = generatedId.toInt())
+
         try {
             firestoreSyncManager.syncTransaction(savedTransaction)
             firestoreSyncManager.syncSharedLedgerTransaction(savedTransaction)
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        val newBalance = try { repository.getCustomerBalance(transaction.customerId) } catch (e: Exception) {
-            e.printStackTrace(); 0.0
+
+        val newBalance = try {
+            repository.getCustomerBalance(transaction.customerId)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            0.0
         }
         onCompleted(newBalance)
     }
