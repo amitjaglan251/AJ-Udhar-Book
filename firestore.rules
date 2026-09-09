@@ -1,54 +1,103 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+    function signedIn() {
+      return request.auth != null;
     }
 
-    match /sharedLedgers/{ledgerId} {
-      allow read: if request.auth != null
-        && (
-          resource.data.ownerUid == request.auth.uid
-          || request.auth.uid in resource.data.participantUids
-        );
-      allow create: if request.auth != null
-        && request.resource.data.ownerUid == request.auth.uid
-        && request.resource.data.participantUids.size() == 1
-        && request.auth.uid in request.resource.data.participantUids;
-      allow update: if request.auth != null
-        && resource.data.ownerUid == request.auth.uid
-        && request.resource.data.ownerUid == resource.data.ownerUid
-        && request.resource.data.inviteCode == resource.data.inviteCode;
-      allow delete: if request.auth != null && resource.data.ownerUid == request.auth.uid;
+    function isOwner(ledgerId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/sharedLedgers/$(ledgerId)).data.ownerUid == request.auth.uid;
+    }
 
-      match /joinRequests/{requesterUid} {
-        allow create: if request.auth != null
-          && request.auth.uid == requesterUid
-          && request.resource.data.ledgerCode == ledgerId
-          && request.resource.data.requesterUid == request.auth.uid
-          && request.resource.data.status == 'PENDING'
-          && exists(/databases/$(database)/documents/sharedLedgers/$(ledgerId));
-        allow read: if request.auth != null
-          && (
-            request.auth.uid == requesterUid
-            || request.auth.uid == get(/databases/$(database)/documents/sharedLedgers/$(ledgerId)).data.ownerUid
+    function isActiveMember(ledgerId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/sharedLedgers/$(ledgerId)/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/sharedLedgers/$(ledgerId)/members/$(request.auth.uid)).data.status == 'ACTIVE';
+    }
+
+    // Private user data remains isolated to the signed-in account.
+    match /users/{userId}/{document=**} {
+      allow read, write: if signedIn() && request.auth.uid == userId;
+    }
+
+    // -------------------------------------------------------------------
+    // Shared Ledger
+    // -------------------------------------------------------------------
+    match /sharedLedgers/{ledgerId} {
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid;
+
+      allow get: if isOwner(ledgerId) || isActiveMember(ledgerId);
+      allow list: if false;
+
+      allow update, delete: if isOwner(ledgerId)
+        && request.resource.data.ownerUid == resource.data.ownerUid;
+
+      match /members/{memberUid} {
+        // Owner can see all members; a customer can see only their own membership.
+        allow get: if signedIn() && (memberUid == request.auth.uid || isOwner(ledgerId));
+        allow list: if isOwner(ledgerId);
+
+        // Owner creates the owner membership when the ledger is created.
+        allow create: if isOwner(ledgerId)
+          && memberUid == request.auth.uid
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.role == 'OWNER'
+          && request.resource.data.status == 'ACTIVE'
+          || (
+            signedIn()
+            && memberUid == request.auth.uid
+            && request.resource.data.uid == request.auth.uid
+            && request.resource.data.role == 'CUSTOMER'
+            && request.resource.data.status == 'ACTIVE'
+            && request.resource.data.ledgerId == ledgerId
+            && request.resource.data.inviteToken is string
+            && exists(/databases/$(database)/documents/sharedLedgerInvites/$(request.resource.data.inviteToken))
+            && get(/databases/$(database)/documents/sharedLedgerInvites/$(request.resource.data.inviteToken)).data.ledgerId == ledgerId
           );
-        allow update: if request.auth != null
-          && request.auth.uid == get(/databases/$(database)/documents/sharedLedgers/$(ledgerId)).data.ownerUid
-          && request.resource.data.requesterUid == resource.data.requesterUid
-          && request.resource.data.ledgerCode == resource.data.ledgerCode
-          && request.resource.data.status in ['PENDING', 'APPROVED', 'REJECTED'];
-        allow delete: if request.auth != null
-          && (
-            request.auth.uid == requesterUid
-            || request.auth.uid == get(/databases/$(database)/documents/sharedLedgers/$(ledgerId)).data.ownerUid
-          );
+
+        allow update: if isOwner(ledgerId);
+        allow delete: if isOwner(ledgerId) || memberUid == request.auth.uid;
       }
 
       match /transactions/{transactionId} {
-        allow read, create, update, delete: if request.auth != null
-          && request.auth.uid in get(/databases/$(database)/documents/sharedLedgers/$(ledgerId)).data.participantUids;
+        allow read: if isActiveMember(ledgerId);
+
+        // Owner can create any ledger transaction.
+        // Customer can create only their own PAYMENT/Credit entry.
+        allow create: if isOwner(ledgerId)
+          || (
+            isActiveMember(ledgerId)
+            && request.resource.data.createdBy == request.auth.uid
+            && request.resource.data.type == 'PAYMENT'
+            && request.resource.data.amount > 0
+          );
+
+        // Ledger owner controls edits/deletions. Customer payments are append-only.
+        allow update, delete: if isOwner(ledgerId);
       }
+    }
+
+    // -------------------------------------------------------------------
+    // Secure bearer invite
+    // -------------------------------------------------------------------
+    // The token is high entropy and shared privately by the owner.
+    // Knowing the token is required to read this single invite document;
+    // listing the collection is never allowed.
+    match /sharedLedgerInvites/{token} {
+      allow get: if signedIn();
+      allow list: if false;
+
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ledgerId is string
+        && request.resource.data.role == 'CUSTOMER';
+
+      allow update, delete: if signedIn()
+        && resource.data.ownerUid == request.auth.uid;
     }
   }
 }
