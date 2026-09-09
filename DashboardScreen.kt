@@ -69,10 +69,7 @@ fun DashboardScreen(
                                     onClick = onJoinRequests,
                                     label = { Text("$joinRequestCount", fontWeight = FontWeight.Bold) },
                                     leadingIcon = { Text("🔔") },
-                                    colors = AssistChipDefaults.assistChipColors(
-                                        containerColor = Color.White,
-                                        labelColor = CustomerBlue
-                                    )
+                                    colors = AssistChipDefaults.assistChipColors(containerColor = Color.White, labelColor = CustomerBlue)
                                 )
                             }
                         }
@@ -116,7 +113,7 @@ fun DashboardScreen(
             }
             item { ActionDashboardCard("Reports", "View Reports", "📊", ReportsBlue, onViewReports) }
             item { ActionDashboardCard("Backup & Restore", "Manage Backup", "☁️", BackupGreen, onBackupRestore) }
-            item { ActionDashboardCard("Shared Ledger", "Join a customer ledger with 6-digit code", "🔗", SharedBlue, onSharedLedger) }
+            item { ActionDashboardCard("Shared Ledger", "Securely share a customer ledger in real time", "🔗", SharedBlue, onSharedLedger) }
             item {
                 Button(onClick = onSignOut, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = SignOutRed)) {
                     Text("🚪  Sign Out", fontSize = 18.sp, fontWeight = FontWeight.Bold)
