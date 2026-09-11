@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -28,7 +29,7 @@ import androidx.compose.ui.unit.dp
 import com.aj.udharbook.sync.FirestoreSyncManager
 import com.aj.udharbook.sync.SharedJoinRequest
 import com.aj.udharbook.sync.SharedLedgerSecurity
-import kotlinx.coroutines.MainScope
+import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.launch
 
 @Composable
@@ -42,10 +43,23 @@ fun SharedLedgerScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var requests by remember { mutableStateOf<List<SharedJoinRequest>>(emptyList()) }
+    val scope = rememberCoroutineScope()
+
+    fun friendlyError(e: Exception, action: String): String {
+        return if (e is FirebaseFirestoreException && e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+            "Firestore permission denied. Firebase Console me latest firestore.rules deploy karein, aur ensure karein ki user login hai."
+        } else {
+            e.message ?: "$action failed"
+        }
+    }
 
     fun refreshRequests() {
-        MainScope().launch {
-            try { requests = firestoreSyncManager.getOwnedJoinRequests() } catch (_: Exception) { }
+        scope.launch {
+            try {
+                requests = firestoreSyncManager.getOwnedJoinRequests()
+            } catch (e: Exception) {
+                error = friendlyError(e, "Requests load")
+            }
         }
     }
 
@@ -59,26 +73,34 @@ fun SharedLedgerScreen(
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Join Customer Ledger", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text("Customer ke SMS me mila 6-digit code yahan enter karein. Ab owner approval zaroori hai.")
+                    Text("Customer ke SMS me mila 6-digit code yahan enter karein. Owner approval ke baad hi ledger access milega.")
                     OutlinedTextField(
                         value = code,
-                        onValueChange = { value -> code = value.filter(Char::isDigit).take(6); error = null; status = null },
+                        onValueChange = { value ->
+                            code = value.filter(Char::isDigit).take(6)
+                            error = null
+                            status = null
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("6-digit Share Code") },
                         singleLine = true
                     )
                     Button(
                         onClick = {
-                            loading = true; error = null
-                            MainScope().launch {
+                            loading = true
+                            error = null
+                            scope.launch {
                                 try {
                                     status = firestoreSyncManager.requestJoinShareCode(code)
                                     if (status == SharedLedgerSecurity.APPROVED) {
                                         firestoreSyncManager.completeApprovedJoin(code)
                                         onJoined()
                                     }
-                                } catch (e: Exception) { error = e.message ?: "Join request failed" }
-                                finally { loading = false }
+                                } catch (e: Exception) {
+                                    error = friendlyError(e, "Join request")
+                                } finally {
+                                    loading = false
+                                }
                             }
                         },
                         enabled = code.length == 6 && !loading,
@@ -88,20 +110,24 @@ fun SharedLedgerScreen(
                     }
                     OutlinedButton(
                         onClick = {
-                            loading = true; error = null
-                            MainScope().launch {
+                            loading = true
+                            error = null
+                            scope.launch {
                                 try {
                                     status = firestoreSyncManager.getJoinRequestStatus(code)
-                                    if (status == SharedLedgerSecurity.APPROVED) {
-                                        firestoreSyncManager.completeApprovedJoin(code)
-                                        onJoined()
-                                    } else if (status == SharedLedgerSecurity.REJECTED) {
-                                        error = "Owner ne request reject kar di hai."
-                                    } else if (status == null) {
-                                        error = "Is code ke liye koi request nahi mili."
+                                    when (status) {
+                                        SharedLedgerSecurity.APPROVED -> {
+                                            firestoreSyncManager.completeApprovedJoin(code)
+                                            onJoined()
+                                        }
+                                        SharedLedgerSecurity.REJECTED -> error = "Owner ne request reject kar di hai."
+                                        null -> error = "Is code ke liye koi request nahi mili."
                                     }
-                                } catch (e: Exception) { error = e.message ?: "Approval check failed" }
-                                finally { loading = false }
+                                } catch (e: Exception) {
+                                    error = friendlyError(e, "Approval check")
+                                } finally {
+                                    loading = false
+                                }
                             }
                         },
                         enabled = code.length == 6 && !loading,
@@ -123,18 +149,32 @@ fun SharedLedgerScreen(
                         Text(request.requesterName, fontWeight = FontWeight.Bold)
                         Text("Ledger: ${request.ledgerCode}")
                         Text("Requester: ${request.requesterUid.take(12)}…")
-                        Button(onClick = {
-                            MainScope().launch {
-                                try { firestoreSyncManager.approveJoinRequest(request); refreshRequests() }
-                                catch (e: Exception) { error = e.message ?: "Approval failed" }
-                            }
-                        }, modifier = Modifier.fillMaxWidth()) { Text("Approve") }
-                        OutlinedButton(onClick = {
-                            MainScope().launch {
-                                try { firestoreSyncManager.rejectJoinRequest(request); refreshRequests() }
-                                catch (e: Exception) { error = e.message ?: "Rejection failed" }
-                            }
-                        }, modifier = Modifier.fillMaxWidth()) { Text("Reject") }
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    try {
+                                        firestoreSyncManager.approveJoinRequest(request)
+                                        refreshRequests()
+                                    } catch (e: Exception) {
+                                        error = friendlyError(e, "Approval")
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Approve") }
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    try {
+                                        firestoreSyncManager.rejectJoinRequest(request)
+                                        refreshRequests()
+                                    } catch (e: Exception) {
+                                        error = friendlyError(e, "Rejection")
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Reject") }
                     }
                 }
             }
