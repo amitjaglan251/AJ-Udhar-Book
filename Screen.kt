@@ -7,7 +7,6 @@ sealed class Screen(val route: String) {
     object AddCustomer : Screen("add_customer")
     object CustomerList : Screen("customers")
     object Backup : Screen("backup")
-    object SharedLedger : Screen("shared_ledger")
 
     object CustomerDetails : Screen("customer_details/{customerId}") {
         fun createRoute(customerId: Int): String = "customer_details/$customerId"
