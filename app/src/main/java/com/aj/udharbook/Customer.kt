@@ -12,5 +12,6 @@ data class Customer(
     val name: String,
     val mobile: String,
     val address: String = "",
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val sharedLedgerId: String = ""
 )
