@@ -128,6 +128,15 @@ class FirestoreSyncManager(
             )).await()
         } else if (existingLedger.getString("ownerUid") != uid) {
             throw IllegalStateException("Only the ledger owner can create or resend the invite")
+        } else {
+            ledgerRef.update(
+                mapOf(
+                    "ownerCustomerId" to customer.id,
+                    "customerName" to customer.name,
+                    "mobile" to customer.mobile.filter(Char::isDigit).takeLast(10),
+                    "address" to customer.address
+                )
+            ).await()
         }
         val updatedCustomer = customer.copy(sharedLedgerId = code)
         customerDao.update(updatedCustomer)
@@ -245,16 +254,29 @@ class FirestoreSyncManager(
 
     private suspend fun updateJoinRequest(request: SharedJoinRequest, status: String) {
         if (!isUserSignedIn()) throw IllegalStateException("Login required")
+        if (status != SharedLedgerSecurity.APPROVED && status != SharedLedgerSecurity.REJECTED) {
+            throw IllegalArgumentException("Invalid join request status")
+        }
         val uid = getCurrentUserId() ?: throw IllegalStateException("Login required")
         val ledgerRef = firestore.collection("sharedLedgers").document(request.ledgerCode)
+        val requestRef = ledgerRef.collection("joinRequests").document(request.requesterUid)
         val ledger = ledgerRef.get().await()
-        if (ledger.getString("ownerUid") != uid) throw IllegalStateException("Only the ledger owner can approve requests")
-        if (status == SharedLedgerSecurity.APPROVED) {
-            val participants = (ledger.get("participantUids") as? List<*>)?.filterIsInstance<String>()?.toMutableList() ?: mutableListOf()
-            if (!participants.contains(request.requesterUid)) participants.add(request.requesterUid)
-            ledgerRef.update("participantUids", participants).await()
+        if (!ledger.exists() || ledger.getString("ownerUid") != uid) {
+            throw IllegalStateException("Only the ledger owner can approve requests")
         }
-        ledgerRef.collection("joinRequests").document(request.requesterUid).update("status", status).await()
+        val participants = (ledger.get("participantUids") as? List<*>)
+            ?.filterIsInstance<String>()?.toMutableList() ?: mutableListOf(uid)
+        if (!participants.contains(uid)) participants.add(uid)
+        if (status == SharedLedgerSecurity.APPROVED && !participants.contains(request.requesterUid)) {
+            participants.add(request.requesterUid)
+        }
+
+        firestore.runBatch { batch ->
+            if (status == SharedLedgerSecurity.APPROVED) {
+                batch.update(ledgerRef, "participantUids", participants)
+            }
+            batch.update(requestRef, "status", status)
+        }.await()
     }
 
     suspend fun syncSharedLedgerTransaction(transaction: Transaction) {
