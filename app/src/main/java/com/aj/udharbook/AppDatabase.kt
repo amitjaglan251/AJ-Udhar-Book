@@ -16,7 +16,7 @@ import com.aj.udharbook.model.Transaction
         Customer::class,
         Transaction::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,32 +30,13 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        /**
-         * Migration 1 -> 2
-         *
-         * Old database:
-         * createdAt
-         * no foreign key
-         *
-         * New database:
-         * timestamp
-         * customerId -> customers.id
-         * ON DELETE CASCADE
-         */
         private val MIGRATION_1_2 =
             object : Migration(1, 2) {
-
-                override fun migrate(
-                    database: SupportSQLiteDatabase
-                ) {
-
-                    // 1. Rename old table
+                override fun migrate(database: SupportSQLiteDatabase) {
                     database.execSQL(
-                        "ALTER TABLE transactions " +
-                                "RENAME TO transactions_old"
+                        "ALTER TABLE transactions RENAME TO transactions_old"
                     )
 
-                    // 2. Create new table matching Room schema
                     database.execSQL(
                         """
                         CREATE TABLE transactions (
@@ -74,8 +55,6 @@ abstract class AppDatabase : RoomDatabase() {
                         """.trimIndent()
                     )
 
-                    // 3. Copy old data
-                    // createdAt -> timestamp
                     database.execSQL(
                         """
                         INSERT INTO transactions (
@@ -97,9 +76,24 @@ abstract class AppDatabase : RoomDatabase() {
                         """.trimIndent()
                     )
 
-                    // 4. Delete old table
+                    database.execSQL("DROP TABLE transactions_old")
+                }
+            }
+
+        /**
+         * Migration 2 -> 3 restores the shared-ledger columns used by the
+         * previous working version of AJ Udhar Book.
+         *
+         * Existing v2 customer and transaction data is preserved.
+         */
+        private val MIGRATION_2_3 =
+            object : Migration(2, 3) {
+                override fun migrate(database: SupportSQLiteDatabase) {
                     database.execSQL(
-                        "DROP TABLE transactions_old"
+                        "ALTER TABLE customers ADD COLUMN sharedLedgerId TEXT NOT NULL DEFAULT ''"
+                    )
+                    database.execSQL(
+                        "ALTER TABLE transactions ADD COLUMN syncKey TEXT NOT NULL DEFAULT ''"
                     )
                 }
             }
@@ -107,22 +101,16 @@ abstract class AppDatabase : RoomDatabase() {
         fun getDatabase(
             context: Context
         ): AppDatabase {
-
             return INSTANCE ?: synchronized(this) {
-
-                val instance =
-                    Room.databaseBuilder(
-                        context.applicationContext,
-                        AppDatabase::class.java,
-                        "aj_udhar_book_db"
-                    )
-                        .addMigrations(
-                            MIGRATION_1_2
-                        )
-                        .build()
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "aj_udhar_book_db"
+                )
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .build()
 
                 INSTANCE = instance
-
                 instance
             }
         }
