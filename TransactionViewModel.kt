@@ -7,7 +7,6 @@ import com.aj.udharbook.model.Transaction
 import com.aj.udharbook.repository.TransactionRepository
 import com.aj.udharbook.sync.FirestoreSyncManager
 import kotlinx.coroutines.launch
-import java.util.UUID
 
 class TransactionViewModel(
     private val repository: TransactionRepository,
@@ -17,20 +16,18 @@ class TransactionViewModel(
     val allTransactions = repository.allTransactions
 
     fun insert(transaction: Transaction, onCompleted: (Double) -> Unit = {}) = viewModelScope.launch {
-        val customer = try { firestoreSyncManager.getCustomerByIdOnce(transaction.customerId) } catch (_: Exception) { null }
-        val shared = customer?.sharedLedgerId?.matches(Regex("\\d{6}")) == true
-        val syncKey = if (shared && transaction.syncKey.isBlank()) UUID.randomUUID().toString() else transaction.syncKey
-        val prepared = transaction.copy(syncKey = syncKey)
-        val generatedId = repository.insert(prepared)
-        val savedTransaction = prepared.copy(id = generatedId.toInt())
+        val generatedId = repository.insert(transaction)
+        val savedTransaction = transaction.copy(id = generatedId.toInt())
         try {
             firestoreSyncManager.syncTransaction(savedTransaction)
-            firestoreSyncManager.syncSharedLedgerTransaction(savedTransaction)
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        val newBalance = try { repository.getCustomerBalance(transaction.customerId) } catch (e: Exception) {
-            e.printStackTrace(); 0.0
+        val newBalance = try {
+            repository.getCustomerBalance(transaction.customerId)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            0.0
         }
         onCompleted(newBalance)
     }
@@ -39,7 +36,6 @@ class TransactionViewModel(
         repository.update(transaction)
         try {
             firestoreSyncManager.syncTransaction(transaction)
-            firestoreSyncManager.syncSharedLedgerTransaction(transaction)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -49,7 +45,6 @@ class TransactionViewModel(
         repository.delete(transaction)
         try {
             firestoreSyncManager.deleteTransaction(transaction.id)
-            firestoreSyncManager.deleteSharedLedgerTransaction(transaction)
         } catch (e: Exception) {
             e.printStackTrace()
         }
