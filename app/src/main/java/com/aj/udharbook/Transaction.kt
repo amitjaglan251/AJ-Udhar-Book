@@ -30,5 +30,7 @@ data class Transaction(
 
     val note: String = "",
 
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+
+    val syncKey: String = ""
 )
