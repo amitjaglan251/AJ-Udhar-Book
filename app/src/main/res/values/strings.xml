@@ -1,1 +1,4 @@
-<resources><string name="app_name">AJ Udhar Book</string></resources>
+<resources>
+    <string name="app_name">AJ Udhar Book</string>
+    <string name="default_web_client_id">266796568068-me0knh7ojfbaautm7qfgdslqk6ulv85a.apps.googleusercontent.com</string>
+</resources>
