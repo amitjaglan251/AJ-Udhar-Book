@@ -137,7 +137,10 @@ fun AJNavGraph(
         composable(Screen.Backup.route) {
             BackupRestoreScreen(
                 backupManager = backupManager,
-                onRestoreBackup = { navController.navigate("restore_backup") }
+                onRestoreBackup = { navController.navigate("restore_backup") },
+                onSyncNow = {
+                    firestoreSyncManager.syncLocalToCloud()
+                }
             )
         }
 
