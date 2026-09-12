@@ -12,316 +12,146 @@ class FirestoreSyncManager(
     private val customerDao: CustomerDao,
     private val transactionDao: TransactionDao
 ) {
+    private val auth = FirebaseAuth.getInstance()
+    private val firestore = FirebaseFirestore.getInstance()
 
-    private val auth =
-        FirebaseAuth.getInstance()
+    fun isUserSignedIn(): Boolean = auth.currentUser != null
+    fun getCurrentUserId(): String? = auth.currentUser?.uid
 
-    private val firestore =
-        FirebaseFirestore.getInstance()
-
-    // ==================================================
-    // CURRENT USER
-    // ==================================================
-
-    fun isUserSignedIn(): Boolean {
-        return auth.currentUser != null
+    private fun userDocument() = auth.currentUser?.uid?.let { uid ->
+        firestore.collection("users").document(uid)
     }
-
-    fun getCurrentUserId(): String? {
-        return auth.currentUser?.uid
-    }
-
-    // ==================================================
-    // USER DOCUMENT
-    // ==================================================
-
-    private fun userDocument() =
-        auth.currentUser?.uid?.let { uid ->
-            firestore
-                .collection("users")
-                .document(uid)
-        }
 
     private fun requireUserDocument() =
-        userDocument()
-            ?: throw IllegalStateException(
-                "User is not signed in"
-            )
+        userDocument() ?: throw IllegalStateException("User is not signed in")
 
-    // ==================================================
-    // CUSTOMER SYNC
-    // LOCAL → FIRESTORE
-    // ==================================================
-
-    suspend fun syncCustomer(
-        customer: Customer
-    ) {
+    suspend fun syncCustomer(customer: Customer) {
         if (customer.id <= 0) return
-
-        val user =
-            requireUserDocument()
-
-        val data =
-            hashMapOf<String, Any>(
-                "id" to customer.id,
-                "name" to customer.name,
-                "mobile" to customer.mobile,
-                "address" to customer.address,
-                "createdAt" to customer.createdAt
-            )
-
-        user
-            .collection("customers")
-            .document(
-                customer.id.toString()
-            )
+        val data = hashMapOf<String, Any>(
+            "id" to customer.id,
+            "name" to customer.name,
+            "mobile" to customer.mobile,
+            "address" to customer.address,
+            "createdAt" to customer.createdAt
+        )
+        requireUserDocument().collection("customers")
+            .document(customer.id.toString())
             .set(data)
             .await()
     }
 
-    // ==================================================
-    // CUSTOMER DELETE
-    // ==================================================
-
-    suspend fun deleteCustomer(
-        customerId: Int
-    ) {
+    suspend fun deleteCustomer(customerId: Int) {
         if (customerId <= 0) return
-
-        val user =
-            requireUserDocument()
-
-        user
-            .collection("customers")
-            .document(
-                customerId.toString()
-            )
+        requireUserDocument().collection("customers")
+            .document(customerId.toString())
             .delete()
             .await()
     }
 
-    // ==================================================
-    // TRANSACTION SYNC
-    // LOCAL → FIRESTORE
-    // ==================================================
-
-    suspend fun syncTransaction(
-        transaction: Transaction
-    ) {
+    suspend fun syncTransaction(transaction: Transaction) {
         if (transaction.id <= 0) return
-
-        val user =
-            requireUserDocument()
-
-        val data =
-            hashMapOf<String, Any>(
-                "id" to transaction.id,
-                "customerId" to transaction.customerId,
-                "amount" to transaction.amount,
-                "type" to transaction.type,
-                "note" to transaction.note,
-                "timestamp" to transaction.timestamp
-            )
-
-        user
-            .collection("transactions")
-            .document(
-                transaction.id.toString()
-            )
+        val data = hashMapOf<String, Any>(
+            "id" to transaction.id,
+            "customerId" to transaction.customerId,
+            "amount" to transaction.amount,
+            "type" to transaction.type,
+            "note" to transaction.note,
+            "timestamp" to transaction.timestamp
+        )
+        requireUserDocument().collection("transactions")
+            .document(transaction.id.toString())
             .set(data)
             .await()
     }
 
-    // ==================================================
-    // TRANSACTION DELETE
-    // ==================================================
-
-    suspend fun deleteTransaction(
-        transactionId: Int
-    ) {
+    suspend fun deleteTransaction(transactionId: Int) {
         if (transactionId <= 0) return
-
-        val user =
-            requireUserDocument()
-
-        user
-            .collection("transactions")
-            .document(
-                transactionId.toString()
-            )
+        requireUserDocument().collection("transactions")
+            .document(transactionId.toString())
             .delete()
             .await()
     }
 
-    // ==================================================
-    // SYNC CUSTOMERS
-    // ==================================================
-
-    suspend fun syncCustomers(
-        customers: List<Customer>
-    ) {
+    suspend fun syncCustomers(customers: List<Customer>) {
         if (!isUserSignedIn()) return
-
-        for (customer in customers) {
-            if (customer.id > 0) {
-                syncCustomer(customer)
-            }
-        }
+        for (customer in customers) if (customer.id > 0) syncCustomer(customer)
     }
 
-    // ==================================================
-    // SYNC TRANSACTIONS
-    // ==================================================
-
-    suspend fun syncTransactions(
-        transactions: List<Transaction>
-    ) {
+    suspend fun syncTransactions(transactions: List<Transaction>) {
         if (!isUserSignedIn()) return
-
-        for (transaction in transactions) {
-            if (transaction.id > 0) {
-                syncTransaction(transaction)
-            }
-        }
+        for (transaction in transactions) if (transaction.id > 0) syncTransaction(transaction)
     }
 
-    // ==================================================
-    // SYNC ALL
-    // LOCAL → FIRESTORE
-    // ==================================================
-
-    suspend fun syncAll(
-        customers: List<Customer>,
-        transactions: List<Transaction>
-    ) {
+    suspend fun syncAll(customers: List<Customer>, transactions: List<Transaction>) {
         if (!isUserSignedIn()) return
-
         syncCustomers(customers)
         syncTransactions(transactions)
     }
 
-    // ==================================================
-    // CLEAR LOCAL DATA
-    // ==================================================
-
     suspend fun clearLocalData() {
-        // First delete transactions as they depend on customers
         transactionDao.deleteAll()
-        // Then delete customers
         customerDao.deleteAll()
     }
 
-    // ==================================================
-    // RESTORE CLOUD DATA
-    // FIRESTORE → ROOM
-    // ==================================================
-
     suspend fun restoreCloudToLocal() {
-        if (!isUserSignedIn()) {
-            throw IllegalStateException(
-                "User is not signed in"
+        if (!isUserSignedIn()) throw IllegalStateException("User is not signed in")
+
+        // IMPORTANT: backup existing local data FIRST.
+        // This protects customers/transactions created before cloud sync existed.
+        val localCustomersBeforeRestore = customerDao.getAllCustomersOnce()
+        val localTransactionsBeforeRestore = transactionDao.getAllTransactionsOnce()
+
+        if (localCustomersBeforeRestore.isNotEmpty() || localTransactionsBeforeRestore.isNotEmpty()) {
+            syncAll(
+                customers = localCustomersBeforeRestore,
+                transactions = localTransactionsBeforeRestore
             )
         }
 
-        val user =
-            requireUserDocument()
+        val user = requireUserDocument()
 
-        // GET CUSTOMERS FROM FIRESTORE
-        val customerSnapshot =
-            user
-                .collection("customers")
-                .get()
-                .await()
+        val customerSnapshot = user.collection("customers").get().await()
+        val cloudCustomers = customerSnapshot.documents.mapNotNull { document ->
+            val id = document.getLong("id")?.toInt()
+                ?: document.id.toIntOrNull()
+                ?: return@mapNotNull null
 
-        val cloudCustomers =
-            customerSnapshot.documents.mapNotNull { document ->
-                val id =
-                    document.getLong("id")
-                        ?.toInt()
-                        ?: document.id.toIntOrNull()
-                        ?: return@mapNotNull null
+            Customer(
+                id = id,
+                name = document.getString("name") ?: "",
+                mobile = document.getString("mobile") ?: "",
+                address = document.getString("address") ?: "",
+                createdAt = document.getLong("createdAt") ?: System.currentTimeMillis()
+            )
+        }
 
-                val name =
-                    document.getString("name") ?: ""
+        val transactionSnapshot = user.collection("transactions").get().await()
+        val cloudTransactions = transactionSnapshot.documents.mapNotNull { document ->
+            val id = document.getLong("id")?.toInt()
+                ?: document.id.toIntOrNull()
+                ?: return@mapNotNull null
+            val customerId = document.getLong("customerId")?.toInt()
+                ?: return@mapNotNull null
 
-                val mobile =
-                    document.getString("mobile") ?: ""
+            Transaction(
+                id = id,
+                customerId = customerId,
+                amount = document.getDouble("amount")
+                    ?: document.getLong("amount")?.toDouble()
+                    ?: 0.0,
+                type = document.getString("type") ?: "UDHAR",
+                note = document.getString("note") ?: "",
+                timestamp = document.getLong("timestamp") ?: System.currentTimeMillis()
+            )
+        }
 
-                val address =
-                    document.getString("address") ?: ""
-
-                val createdAt =
-                    document.getLong("createdAt")
-                        ?: System.currentTimeMillis()
-
-                Customer(
-                    id = id,
-                    name = name,
-                    mobile = mobile,
-                    address = address,
-                    createdAt = createdAt
-                )
-            }
-
-        // GET TRANSACTIONS FROM FIRESTORE
-        val transactionSnapshot =
-            user
-                .collection("transactions")
-                .get()
-                .await()
-
-        val cloudTransactions =
-            transactionSnapshot.documents.mapNotNull { document ->
-                val id =
-                    document.getLong("id")
-                        ?.toInt()
-                        ?: document.id.toIntOrNull()
-                        ?: return@mapNotNull null
-
-                val customerId =
-                    document.getLong("customerId")
-                        ?.toInt()
-                        ?: return@mapNotNull null
-
-                val amount =
-                    document.getDouble("amount")
-                        ?: document.getLong("amount")?.toDouble()
-                        ?: 0.0
-
-                val type =
-                    document.getString("type") ?: "UDHAR"
-
-                val note =
-                    document.getString("note") ?: ""
-
-                val timestamp =
-                    document.getLong("timestamp")
-                        ?: System.currentTimeMillis()
-
-                Transaction(
-                    id = id,
-                    customerId = customerId,
-                    amount = amount,
-                    type = type,
-                    note = note,
-                    timestamp = timestamp
-                )
-            }
-
-        // CHECK LOCAL ROOM DATA
-        val localCustomers =
-            customerDao.getAllCustomersOnce()
-
-        val localTransactions =
-            transactionDao.getAllTransactionsOnce()
-
-        // RESTORE CUSTOMERS
-        if (localCustomers.isEmpty() && cloudCustomers.isNotEmpty()) {
+        // Only restore cloud records when the corresponding local table is empty.
+        // Existing local data remains untouched on login.
+        if (localCustomersBeforeRestore.isEmpty() && cloudCustomers.isNotEmpty()) {
             customerDao.insertAll(cloudCustomers)
         }
 
-        // RESTORE TRANSACTIONS
-        if (localTransactions.isEmpty() && cloudTransactions.isNotEmpty()) {
+        if (localTransactionsBeforeRestore.isEmpty() && cloudTransactions.isNotEmpty()) {
             transactionDao.insertAll(cloudTransactions)
         }
     }
