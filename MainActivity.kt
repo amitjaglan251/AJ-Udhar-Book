@@ -10,6 +10,7 @@ import com.aj.udharbook.database.AppDatabase
 import com.aj.udharbook.navigation.AJNavGraph
 import com.aj.udharbook.repository.CustomerRepository
 import com.aj.udharbook.repository.TransactionRepository
+import com.aj.udharbook.sync.CloudSyncScheduler
 import com.aj.udharbook.sync.FirestoreSyncManager
 import com.aj.udharbook.viewmodel.CustomerViewModel
 import com.aj.udharbook.viewmodel.CustomerViewModelFactory
@@ -18,33 +19,17 @@ import com.aj.udharbook.viewmodel.TransactionViewModelFactory
 
 class MainActivity : ComponentActivity() {
 
-    // ==================================================
-    // DATABASE
-    // ==================================================
-
     private val database by lazy {
         AppDatabase.getDatabase(applicationContext)
     }
 
-    // ==================================================
-    // REPOSITORIES
-    // ==================================================
-
     private val customerRepository by lazy {
-        CustomerRepository(
-            database.customerDao()
-        )
+        CustomerRepository(database.customerDao())
     }
 
     private val transactionRepository by lazy {
-        TransactionRepository(
-            database.transactionDao()
-        )
+        TransactionRepository(database.transactionDao())
     }
-
-    // ==================================================
-    // FIRESTORE SYNC MANAGER
-    // ==================================================
 
     private val firestoreSyncManager by lazy {
         FirestoreSyncManager(
@@ -53,56 +38,36 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    // ==================================================
-    // CUSTOMER VIEWMODEL
-    // ==================================================
-
     private val customerViewModel: CustomerViewModel by viewModels {
-
         CustomerViewModelFactory(
             customerRepository,
             firestoreSyncManager
         )
     }
 
-    // ==================================================
-    // TRANSACTION VIEWMODEL
-    // ==================================================
-
     private val transactionViewModel: TransactionViewModel by viewModels {
-
         TransactionViewModelFactory(
             transactionRepository,
             firestoreSyncManager
         )
     }
 
-    // ==================================================
-    // BACKUP MANAGER
-    // ==================================================
-
     private val backupManager by lazy {
-
         BackupManager(
             context = applicationContext,
             database = database
         )
     }
 
-    // ==================================================
-    // ON CREATE
-    // ==================================================
-
-    override fun onCreate(
-        savedInstanceState: Bundle?
-    ) {
-
+    override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        setContent {
+        // Keep a single background sync job registered. WorkManager will run it
+        // whenever network connectivity is available, even after app restarts.
+        CloudSyncScheduler.schedule(applicationContext)
 
-            val navController =
-                rememberNavController()
+        setContent {
+            val navController = rememberNavController()
 
             AJNavGraph(
                 navController = navController,
