@@ -112,9 +112,32 @@ class FirestoreSyncManager(
         customerDao.deleteAll()
     }
 
+    /**
+     * Login-time backup + restore.
+     *
+     * Existing local Room data is treated as the source of truth on login,
+     * so old data is uploaded BEFORE reading the cloud copy. This guarantees
+     * customers created before cloud sync was enabled are backed up too.
+     *
+     * If local Room is empty (for example after uninstall/reinstall), the
+     * cloud copy is restored into Room and then synced again for consistency.
+     */
     suspend fun restoreCloudToLocal() {
         if (!isUserSignedIn()) {
             throw IllegalStateException("User is not signed in")
+        }
+
+        val localCustomers = customerDao.getAllCustomersOnce()
+        val localTransactions = transactionDao.getAllTransactionsOnce()
+
+        // IMPORTANT: Back up existing local data FIRST.
+        // This was previously done only after reading Firestore, so a failed
+        // customer read could prevent the customer backup from ever running.
+        if (localCustomers.isNotEmpty() || localTransactions.isNotEmpty()) {
+            syncAll(
+                customers = localCustomers,
+                transactions = localTransactions
+            )
         }
 
         val user = requireUserDocument()
@@ -165,9 +188,8 @@ class FirestoreSyncManager(
             )
         }
 
-        val localCustomers = customerDao.getAllCustomersOnce()
-        val localTransactions = transactionDao.getAllTransactionsOnce()
-
+        // Only restore cloud data when the local database is empty.
+        // This prevents a normal login from replacing current local data.
         if (localCustomers.isEmpty() && cloudCustomers.isNotEmpty()) {
             customerDao.insertAll(cloudCustomers)
         }
@@ -176,8 +198,7 @@ class FirestoreSyncManager(
             transactionDao.insertAll(cloudTransactions)
         }
 
-        // IMPORTANT: also upload existing local data during login.
-        // This protects older data that was created before cloud sync was enabled.
+        // Final sync makes sure restored records are also present in cloud.
         val finalCustomers = customerDao.getAllCustomersOnce()
         val finalTransactions = transactionDao.getAllTransactionsOnce()
 
