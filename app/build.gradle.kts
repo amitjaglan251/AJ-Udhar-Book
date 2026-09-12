@@ -47,11 +47,13 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation(libs.androidx.work.runtime.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.play.services.auth)
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.messaging)
     implementation(libs.kotlinx.serialization.json)
+    testImplementation(kotlin("test"))
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
