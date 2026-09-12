@@ -10,6 +10,7 @@ import com.aj.udharbook.database.AppDatabase
 import com.aj.udharbook.navigation.AJNavGraph
 import com.aj.udharbook.repository.CustomerRepository
 import com.aj.udharbook.repository.TransactionRepository
+import com.aj.udharbook.sync.CloudSyncScheduler
 import com.aj.udharbook.sync.FirestoreSyncManager
 import com.aj.udharbook.viewmodel.CustomerViewModel
 import com.aj.udharbook.viewmodel.CustomerViewModelFactory
@@ -98,6 +99,9 @@ class MainActivity : ComponentActivity() {
     ) {
 
         super.onCreate(savedInstanceState)
+
+        // Schedule periodic cloud sync/retry when the app starts.
+        CloudSyncScheduler.schedule(applicationContext)
 
         setContent {
 
