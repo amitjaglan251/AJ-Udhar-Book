@@ -17,7 +17,8 @@ class CloudSyncWorker(
             transactionDao = database.transactionDao()
         )
 
-        if (!syncManager.isUserSignedIn()) {
+        val isSignedIn = syncManager.isUserSignedIn()
+        if (!isSignedIn) {
             return Result.success()
         }
 
@@ -25,10 +26,10 @@ class CloudSyncWorker(
             syncManager.syncLocalToCloud()
             Result.success()
         } catch (e: Exception) {
-            if (runAttemptCount >= 5) {
-                Result.failure()
+            if (SyncRetryPolicy.shouldRetry(isSignedIn, syncSucceeded = false)) {
+                if (runAttemptCount >= 5) Result.failure() else Result.retry()
             } else {
-                Result.retry()
+                Result.success()
             }
         }
     }
