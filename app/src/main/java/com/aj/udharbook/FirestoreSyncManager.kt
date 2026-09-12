@@ -84,6 +84,31 @@ class FirestoreSyncManager(
         syncTransactions(transactions)
     }
 
+    /**
+     * Manual recovery/sync entry point. Room remains the local source of truth;
+     * this method only pushes the current local state to Firestore.
+     */
+    suspend fun syncLocalToCloud() {
+        if (!isUserSignedIn()) {
+            throw IllegalStateException("User is not signed in")
+        }
+
+        val customers = customerDao.getAllCustomersOnce()
+        val transactions = transactionDao.getAllTransactionsOnce()
+
+        Log.d(
+            "AJ_SYNC",
+            "Manual sync started: customers=${customers.size}, transactions=${transactions.size}"
+        )
+
+        syncAll(customers, transactions)
+
+        Log.d(
+            "AJ_SYNC",
+            "Manual sync completed: customers=${customers.size}, transactions=${transactions.size}"
+        )
+    }
+
     suspend fun clearLocalData() {
         transactionDao.deleteAll()
         customerDao.deleteAll()
@@ -102,7 +127,6 @@ class FirestoreSyncManager(
             "Start: localCustomers=${localCustomers.size}, localTransactions=${localTransactions.size}"
         )
 
-        // Never lose existing local data: back it up before cloud restore.
         if (localCustomers.isNotEmpty() || localTransactions.isNotEmpty()) {
             try {
                 syncAll(localCustomers, localTransactions)
@@ -162,8 +186,6 @@ class FirestoreSyncManager(
             "Cloud transactions=${transactionSnapshot.size()}, parsed=${cloudTransactions.size}"
         )
 
-        // Customers MUST be restored first because Transaction.customerId
-        // has a Room foreign-key relationship with Customer.id.
         if (localCustomers.isEmpty() && cloudCustomers.isNotEmpty()) {
             try {
                 customerDao.insertAll(cloudCustomers)
@@ -193,8 +215,6 @@ class FirestoreSyncManager(
                     "valid=${validTransactions.size}, skippedOrphans=$skippedOrphans"
             )
 
-            // Insert one-by-one so a single stale/orphan transaction cannot
-            // roll back the complete history batch.
             for (transaction in validTransactions) {
                 try {
                     transactionDao.insert(transaction)
