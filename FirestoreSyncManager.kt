@@ -1,5 +1,6 @@
 package com.aj.udharbook.sync
 
+import android.util.Log
 import com.aj.udharbook.dao.CustomerDao
 import com.aj.udharbook.dao.TransactionDao
 import com.aj.udharbook.model.Customer
@@ -12,27 +13,21 @@ class FirestoreSyncManager(
     private val customerDao: CustomerDao,
     private val transactionDao: TransactionDao
 ) {
-
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
 
     fun isUserSignedIn(): Boolean = auth.currentUser != null
-
     fun getCurrentUserId(): String? = auth.currentUser?.uid
 
-    private fun userDocument() =
-        auth.currentUser?.uid?.let { uid ->
-            firestore.collection("users").document(uid)
-        }
+    private fun userDocument() = auth.currentUser?.uid?.let { uid ->
+        firestore.collection("users").document(uid)
+    }
 
-    private fun requireUserDocument() =
-        userDocument()
-            ?: throw IllegalStateException("User is not signed in")
+    private fun requireUserDocument() = userDocument()
+        ?: throw IllegalStateException("User is not signed in")
 
     suspend fun syncCustomer(customer: Customer) {
         if (customer.id <= 0) return
-
-        val user = requireUserDocument()
         val data = hashMapOf<String, Any>(
             "id" to customer.id,
             "name" to customer.name,
@@ -40,26 +35,18 @@ class FirestoreSyncManager(
             "address" to customer.address,
             "createdAt" to customer.createdAt
         )
-
-        user.collection("customers")
-            .document(customer.id.toString())
-            .set(data)
-            .await()
+        requireUserDocument().collection("customers")
+            .document(customer.id.toString()).set(data).await()
     }
 
     suspend fun deleteCustomer(customerId: Int) {
         if (customerId <= 0) return
-        requireUserDocument()
-            .collection("customers")
-            .document(customerId.toString())
-            .delete()
-            .await()
+        requireUserDocument().collection("customers")
+            .document(customerId.toString()).delete().await()
     }
 
     suspend fun syncTransaction(transaction: Transaction) {
         if (transaction.id <= 0) return
-
-        val user = requireUserDocument()
         val data = hashMapOf<String, Any>(
             "id" to transaction.id,
             "customerId" to transaction.customerId,
@@ -68,40 +55,27 @@ class FirestoreSyncManager(
             "note" to transaction.note,
             "timestamp" to transaction.timestamp
         )
-
-        user.collection("transactions")
-            .document(transaction.id.toString())
-            .set(data)
-            .await()
+        requireUserDocument().collection("transactions")
+            .document(transaction.id.toString()).set(data).await()
     }
 
     suspend fun deleteTransaction(transactionId: Int) {
         if (transactionId <= 0) return
-        requireUserDocument()
-            .collection("transactions")
-            .document(transactionId.toString())
-            .delete()
-            .await()
+        requireUserDocument().collection("transactions")
+            .document(transactionId.toString()).delete().await()
     }
 
     suspend fun syncCustomers(customers: List<Customer>) {
         if (!isUserSignedIn()) return
-        for (customer in customers) {
-            if (customer.id > 0) syncCustomer(customer)
-        }
+        customers.filter { it.id > 0 }.forEach { syncCustomer(it) }
     }
 
     suspend fun syncTransactions(transactions: List<Transaction>) {
         if (!isUserSignedIn()) return
-        for (transaction in transactions) {
-            if (transaction.id > 0) syncTransaction(transaction)
-        }
+        transactions.filter { it.id > 0 }.forEach { syncTransaction(it) }
     }
 
-    suspend fun syncAll(
-        customers: List<Customer>,
-        transactions: List<Transaction>
-    ) {
+    suspend fun syncAll(customers: List<Customer>, transactions: List<Transaction>) {
         if (!isUserSignedIn()) return
         syncCustomers(customers)
         syncTransactions(transactions)
@@ -112,69 +86,42 @@ class FirestoreSyncManager(
         customerDao.deleteAll()
     }
 
-    /**
-     * Login-time backup + restore.
-     *
-     * Existing local Room data is treated as the source of truth on login,
-     * so old data is uploaded BEFORE reading the cloud copy. This guarantees
-     * customers created before cloud sync was enabled are backed up too.
-     *
-     * If local Room is empty (for example after uninstall/reinstall), the
-     * cloud copy is restored into Room and then synced again for consistency.
-     */
+    /** Login-time backup + restore. */
     suspend fun restoreCloudToLocal() {
-        if (!isUserSignedIn()) {
-            throw IllegalStateException("User is not signed in")
-        }
+        if (!isUserSignedIn()) throw IllegalStateException("User is not signed in")
 
         val localCustomers = customerDao.getAllCustomersOnce()
         val localTransactions = transactionDao.getAllTransactionsOnce()
+        Log.d("AJ_RESTORE", "Start: localCustomers=${localCustomers.size}, localTransactions=${localTransactions.size}")
 
-        // IMPORTANT: Back up existing local data FIRST.
-        // This was previously done only after reading Firestore, so a failed
-        // customer read could prevent the customer backup from ever running.
+        // Preserve existing local data by backing it up before reading cloud data.
         if (localCustomers.isNotEmpty() || localTransactions.isNotEmpty()) {
-            syncAll(
-                customers = localCustomers,
-                transactions = localTransactions
-            )
+            syncAll(localCustomers, localTransactions)
         }
 
         val user = requireUserDocument()
-
-        val customerSnapshot = user
-            .collection("customers")
-            .get()
-            .await()
-
+        val customerSnapshot = user.collection("customers").get().await()
         val cloudCustomers = customerSnapshot.documents.mapNotNull { document ->
             val id = document.getLong("id")?.toInt()
                 ?: document.id.toIntOrNull()
                 ?: return@mapNotNull null
-
             Customer(
                 id = id,
                 name = document.getString("name") ?: "",
                 mobile = document.getString("mobile") ?: "",
                 address = document.getString("address") ?: "",
-                createdAt = document.getLong("createdAt")
-                    ?: System.currentTimeMillis()
+                createdAt = document.getLong("createdAt") ?: System.currentTimeMillis()
             )
         }
+        Log.d("AJ_RESTORE", "Cloud customers=${customerSnapshot.size()}, parsed=${cloudCustomers.size}")
 
-        val transactionSnapshot = user
-            .collection("transactions")
-            .get()
-            .await()
-
+        val transactionSnapshot = user.collection("transactions").get().await()
         val cloudTransactions = transactionSnapshot.documents.mapNotNull { document ->
             val id = document.getLong("id")?.toInt()
                 ?: document.id.toIntOrNull()
                 ?: return@mapNotNull null
-
             val customerId = document.getLong("customerId")?.toInt()
                 ?: return@mapNotNull null
-
             Transaction(
                 id = id,
                 customerId = customerId,
@@ -183,28 +130,39 @@ class FirestoreSyncManager(
                     ?: 0.0,
                 type = document.getString("type") ?: "UDHAR",
                 note = document.getString("note") ?: "",
-                timestamp = document.getLong("timestamp")
-                    ?: System.currentTimeMillis()
+                timestamp = document.getLong("timestamp") ?: System.currentTimeMillis()
             )
         }
+        Log.d("AJ_RESTORE", "Cloud transactions=${transactionSnapshot.size()}, parsed=${cloudTransactions.size}")
 
-        // Only restore cloud data when the local database is empty.
-        // This prevents a normal login from replacing current local data.
+        // Restore customers first because transactions have a Room foreign key to customers.id.
         if (localCustomers.isEmpty() && cloudCustomers.isNotEmpty()) {
             customerDao.insertAll(cloudCustomers)
+            Log.d("AJ_RESTORE", "Inserted customers=${cloudCustomers.size}")
         }
 
         if (localTransactions.isEmpty() && cloudTransactions.isNotEmpty()) {
-            transactionDao.insertAll(cloudTransactions)
+            val availableCustomerIds = customerDao.getAllCustomersOnce()
+                .asSequence().map { it.id }.toSet()
+
+            val validTransactions = cloudTransactions.filter { it.customerId in availableCustomerIds }
+            val skippedOrphans = cloudTransactions.size - validTransactions.size
+            Log.d("AJ_RESTORE", "Transaction validation: availableCustomers=${availableCustomerIds.size}, valid=${validTransactions.size}, skippedOrphans=$skippedOrphans")
+
+            // Insert individually: one stale/orphan transaction can no longer roll back all history.
+            for (transaction in validTransactions) {
+                try {
+                    transactionDao.insert(transaction)
+                } catch (e: Exception) {
+                    Log.e("AJ_RESTORE", "Transaction restore failed: id=${transaction.id}, customerId=${transaction.customerId}", e)
+                }
+            }
         }
 
-        // Final sync makes sure restored records are also present in cloud.
         val finalCustomers = customerDao.getAllCustomersOnce()
         val finalTransactions = transactionDao.getAllTransactionsOnce()
+        Log.d("AJ_RESTORE", "Complete: finalCustomers=${finalCustomers.size}, finalTransactions=${finalTransactions.size}")
 
-        syncAll(
-            customers = finalCustomers,
-            transactions = finalTransactions
-        )
+        syncAll(finalCustomers, finalTransactions)
     }
 }
