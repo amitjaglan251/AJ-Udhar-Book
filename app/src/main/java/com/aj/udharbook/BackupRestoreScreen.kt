@@ -1,6 +1,5 @@
 package com.aj.udharbook.ui.backup
 
-import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -19,7 +18,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,240 +33,151 @@ import kotlinx.coroutines.launch
 @Composable
 fun BackupRestoreScreen(
     backupManager: BackupManager,
-    onRestoreBackup: () -> Unit
+    onRestoreBackup: () -> Unit,
+    onSyncNow: suspend () -> Unit
 ) {
-
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    val snackbarHostState =
-        remember {
-            SnackbarHostState()
+    var isCreatingBackup by remember { mutableStateOf(false) }
+    var isSyncing by remember { mutableStateOf(false) }
+
+    val createDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                isCreatingBackup = true
+                try {
+                    val json = backupManager.createBackup()
+                    backupManager.saveJsonToUri(uri, json)
+                    snackbarHostState.showSnackbar("Backup successfully saved.")
+                } catch (e: Exception) {
+                    snackbarHostState.showSnackbar(
+                        "Backup failed: ${e.message ?: "Unknown error"}"
+                    )
+                } finally {
+                    isCreatingBackup = false
+                }
+            }
         }
-
-    var isCreatingBackup by remember {
-        mutableStateOf(false)
     }
 
-    // ==================================================
-    // CREATE FILE PICKER
-    // ==================================================
-
-    val createDocumentLauncher =
-        rememberLauncherForActivityResult(
-            contract =
-                ActivityResultContracts.CreateDocument(
-                    "application/json"
-                )
-        ) { uri ->
-
-            if (uri != null) {
-
-                scope.launch {
-
-                    isCreatingBackup = true
-
-                    try {
-
-                        val json =
-                            backupManager.createBackup()
-
-                        backupManager.saveJsonToUri(
-                            uri = uri,
-                            jsonText = json
-                        )
-
-                        snackbarHostState.showSnackbar(
-                            "Backup successfully saved."
-                        )
-
-                    } catch (e: Exception) {
-
-                        snackbarHostState.showSnackbar(
-                            "Backup failed: ${
-                                e.message
-                                    ?: "Unknown error"
-                            }"
-                        )
-
-                    } finally {
-
-                        isCreatingBackup = false
-                    }
-                }
-            }
-        }
-
-    // ==================================================
-    // UI
-    // ==================================================
-
     Scaffold(
-
         topBar = {
-
-            TopAppBar(
-                title = {
-                    Text("Backup & Restore")
-                }
+            androidx.compose.material3.TopAppBar(
+                title = { Text("Backup & Restore") }
             )
         },
-
-        snackbarHost = {
-
-            SnackbarHost(
-                hostState =
-                    snackbarHostState
-            )
-        }
-
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { paddingValues ->
-
         Column(
-
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .padding(16.dp),
-
-            verticalArrangement =
-                Arrangement.spacedBy(16.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-
-            // ==================================================
-            // HEADER
-            // ==================================================
-
-            Card(
-                modifier =
-                    Modifier.fillMaxWidth()
-            ) {
-
+            Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    modifier =
-                        Modifier.padding(20.dp),
-
-                    verticalArrangement =
-                        Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-
                     Text(
-                        text =
-                            "AJ Udhar Book Backup",
-
-                        style =
-                            MaterialTheme.typography
-                                .headlineSmall
+                        text = "AJ Udhar Book Backup",
+                        style = MaterialTheme.typography.headlineSmall
                     )
-
                     Text(
-                        text =
-                            "अपने customers और transactions का backup सुरक्षित रखें।"
+                        text = "अपने customers और transactions का backup सुरक्षित रखें।"
                     )
                 }
             }
 
-            // ==================================================
-            // CREATE BACKUP
-            // ==================================================
-
             Button(
-
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                enabled =
-                    !isCreatingBackup,
-
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isCreatingBackup && !isSyncing,
                 onClick = {
-
-                    createDocumentLauncher.launch(
-                        "AJ_UdharBook_Backup.json"
-                    )
+                    createDocumentLauncher.launch("AJ_UdharBook_Backup.json")
                 }
             ) {
-
                 if (isCreatingBackup) {
-
-                    CircularProgressIndicator(
-                        modifier =
-                            Modifier
-                                .height(20.dp)
-                    )
-
+                    CircularProgressIndicator(modifier = Modifier.height(20.dp))
                 } else {
-
-                    Text(
-                        "Create Backup"
-                    )
+                    Text("Create Backup")
                 }
             }
-
-            // ==================================================
-            // RESTORE BACKUP
-            // ==================================================
 
             Button(
-
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                enabled =
-                    !isCreatingBackup,
-
-                onClick =
-                    onRestoreBackup
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isCreatingBackup && !isSyncing,
+                onClick = onRestoreBackup
             ) {
-
-                Text(
-                    "Restore Backup"
-                )
+                Text("Restore Backup")
             }
 
-            Spacer(
-                modifier =
-                    Modifier.height(8.dp)
-            )
-
-            // ==================================================
-            // INFORMATION
-            // ==================================================
-
-            Card(
-                modifier =
-                    Modifier.fillMaxWidth()
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isCreatingBackup && !isSyncing,
+                onClick = {
+                    scope.launch {
+                        isSyncing = true
+                        try {
+                            onSyncNow()
+                            snackbarHostState.showSnackbar(
+                                "Cloud sync completed successfully."
+                            )
+                        } catch (e: Exception) {
+                            snackbarHostState.showSnackbar(
+                                "Sync failed: ${e.message ?: "Internet or Firebase error"}"
+                            )
+                        } finally {
+                            isSyncing = false
+                        }
+                    }
+                }
             ) {
+                if (isSyncing) {
+                    CircularProgressIndicator(modifier = Modifier.height(20.dp))
+                } else {
+                    Text("Sync Now")
+                }
+            }
 
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    modifier =
-                        Modifier.padding(16.dp),
-
-                    verticalArrangement =
-                        Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-
                     Text(
-                        text =
-                            "Backup Information",
-
-                        style =
-                            MaterialTheme.typography
-                                .titleMedium
+                        text = "Cloud Sync",
+                        style = MaterialTheme.typography.titleMedium
                     )
-
                     Text(
-                        text =
-                            "Backup में customers और उनके सभी Udhar/Payment transactions सुरक्षित किए जाएंगे।"
+                        text = "Room का local data सुरक्षित रहेगा और Sync Now से current customers तथा Udhar/Payment transactions Firestore में दोबारा भेजे जा सकते हैं।"
                     )
-
                     Text(
-                        text =
-                            "Backup file JSON format में save होगी।"
+                        text = "Internet unavailable होने पर local data delete नहीं होगा। बाद में Sync Now से retry किया जा सकता है।"
                     )
+                }
+            }
 
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Text(
-                        text =
-                            "Restore करते समय Add या Replace Existing Data का विकल्प मिलेगा।"
+                        text = "Backup Information",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = "Backup में customers और उनके सभी Udhar/Payment transactions सुरक्षित किए जाएंगे।"
+                    )
+                    Text(text = "Backup file JSON format में save होगी।")
+                    Text(
+                        text = "Restore करते समय Add या Replace Existing Data का विकल्प मिलेगा।"
                     )
                 }
             }
