@@ -19,6 +19,7 @@ androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-
 androidx-room-runtime = { module = "androidx.room:room-runtime", version = "2.7.1" }
 androidx-room-ktx = { module = "androidx.room:room-ktx", version = "2.7.1" }
 androidx-room-compiler = { module = "androidx.room:room-compiler", version = "2.7.1" }
+androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version = "2.10.1" }
 play-services-auth = { module = "com.google.android.gms:play-services-auth", version = "21.3.0" }
 firebase-auth = { module = "com.google.firebase:firebase-auth", version = "24.0.1" }
 firebase-firestore = { module = "com.google.firebase:firebase-firestore", version = "26.0.0" }
