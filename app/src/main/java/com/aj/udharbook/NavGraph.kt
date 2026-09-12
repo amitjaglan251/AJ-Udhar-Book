@@ -53,43 +53,18 @@ fun AJNavGraph(
         startDestination = Screen.Login.route
     ) {
 
-        // ==================================================
-        // LOGIN
-        // ==================================================
-
-        composable(
-            Screen.Login.route
-        ) {
-
-            val scope =
-                rememberCoroutineScope()
-
+        composable(Screen.Login.route) {
+            val scope = rememberCoroutineScope()
             LoginScreen(
-
                 onLoginSuccess = {
-
                     scope.launch {
-
                         try {
-
-                            firestoreSyncManager
-                                .restoreCloudToLocal()
-
+                            firestoreSyncManager.restoreCloudToLocal()
                         } catch (e: Exception) {
-
                             e.printStackTrace()
                         }
-
-                        navController.navigate(
-                            Screen.Dashboard.route
-                        ) {
-
-                            popUpTo(
-                                Screen.Login.route
-                            ) {
-                                inclusive = true
-                            }
-
+                        navController.navigate(Screen.Dashboard.route) {
+                            popUpTo(Screen.Login.route) { inclusive = true }
                             launchSingleTop = true
                         }
                     }
@@ -97,163 +72,48 @@ fun AJNavGraph(
             )
         }
 
-
-        // ==================================================
-        // DASHBOARD
-        // ==================================================
-
-        composable(
-            Screen.Dashboard.route
-        ) {
-
-            val customers by
-            customerViewModel
-                .allCustomers
-                .collectAsState(
-                    initial = emptyList()
-                )
-
-            val transactions by
-            transactionViewModel
-                .allTransactions
-                .collectAsState(
-                    initial = emptyList()
-                )
-
-            val scope =
-                rememberCoroutineScope()
+        composable(Screen.Dashboard.route) {
+            val customers by customerViewModel.allCustomers.collectAsState(initial = emptyList())
+            val transactions by transactionViewModel.allTransactions.collectAsState(initial = emptyList())
+            val scope = rememberCoroutineScope()
 
             DashboardScreen(
-
-                customers =
-                    customers,
-
-                transactions =
-                    transactions,
-
-                // ==================================================
-                // ADD CUSTOMER
-                // ==================================================
-
-                onAddCustomer = {
-
-                    navController.navigate(
-                        Screen.AddCustomer.route
-                    )
-                },
-
-                // ==================================================
-                // CUSTOMER LIST
-                // ==================================================
-
-                onViewCustomers = {
-
-                    navController.navigate(
-                        Screen.CustomerList.route
-                    )
-                },
-
-                // ==================================================
-                // REPORTS
-                // ==================================================
-
-                onViewReports = {
-
-                    navController.navigate(
-                        Screen.Reports.route
-                    )
-                },
-
-                // ==================================================
-                // BACKUP
-                // ==================================================
-
-                onBackupRestore = {
-
-                    navController.navigate(
-                        Screen.Backup.route
-                    )
-                },
-
-                // ==================================================
-                // SIGN OUT
-                // ==================================================
-
+                customers = customers,
+                transactions = transactions,
+                onAddCustomer = { navController.navigate(Screen.AddCustomer.route) },
+                onViewCustomers = { navController.navigate(Screen.CustomerList.route) },
+                onViewReports = { navController.navigate(Screen.Reports.route) },
+                onBackupRestore = { navController.navigate(Screen.Backup.route) },
                 onSignOut = {
-
                     scope.launch {
-
                         try {
+                            FirebaseAuth.getInstance().signOut()
 
-                            // CLEAR LOCAL ROOM DATA
-
-                            firestoreSyncManager
-                                .clearLocalData()
-
-
-                            // FIREBASE SIGN OUT
-
-                            FirebaseAuth
-                                .getInstance()
-                                .signOut()
-
-
-                            // GOOGLE SIGN OUT
-
-                            val googleSignInOptions =
-                                GoogleSignInOptions.Builder(
-                                    GoogleSignInOptions.DEFAULT_SIGN_IN
+                            val googleSignInOptions = GoogleSignInOptions.Builder(
+                                GoogleSignInOptions.DEFAULT_SIGN_IN
+                            )
+                                .requestIdToken(
+                                    navController.context.getString(R.string.default_web_client_id)
                                 )
-                                    .requestIdToken(
-                                        navController
-                                            .context
-                                            .getString(
-                                                R.string.default_web_client_id
-                                            )
-                                    )
-                                    .requestEmail()
-                                    .build()
+                                .requestEmail()
+                                .build()
 
+                            val googleSignInClient = GoogleSignIn.getClient(
+                                navController.context,
+                                googleSignInOptions
+                            )
 
-                            val googleSignInClient =
-                                GoogleSignIn.getClient(
-                                    navController.context,
-                                    googleSignInOptions
-                                )
-
-
-                            googleSignInClient
-                                .signOut()
-                                .addOnCompleteListener {
-
-                                    navController.navigate(
-                                        Screen.Login.route
-                                    ) {
-
-                                        popUpTo(0) {
-                                            inclusive = true
-                                        }
-
-                                        launchSingleTop = true
-                                    }
+                            googleSignInClient.signOut().addOnCompleteListener {
+                                navController.navigate(Screen.Login.route) {
+                                    popUpTo(0) { inclusive = true }
+                                    launchSingleTop = true
                                 }
-
+                            }
                         } catch (e: Exception) {
-
                             e.printStackTrace()
-
-                            FirebaseAuth
-                                .getInstance()
-                                .signOut()
-
-                            navController.navigate(
-                                Screen.Login.route
-                            ) {
-
-                                popUpTo(0) {
-                                    inclusive = true
-                                }
-
+                            FirebaseAuth.getInstance().signOut()
+                            navController.navigate(Screen.Login.route) {
+                                popUpTo(0) { inclusive = true }
                                 launchSingleTop = true
                             }
                         }
@@ -262,558 +122,138 @@ fun AJNavGraph(
             )
         }
 
-
-        // ==================================================
-        // REPORTS
-        // ==================================================
-
-        composable(
-            Screen.Reports.route
-        ) {
-
-            val customers by
-            customerViewModel
-                .allCustomers
-                .collectAsState(
-                    initial = emptyList()
-                )
-
-            val transactions by
-            transactionViewModel
-                .allTransactions
-                .collectAsState(
-                    initial = emptyList()
-                )
-
+        composable(Screen.Reports.route) {
+            val customers by customerViewModel.allCustomers.collectAsState(initial = emptyList())
+            val transactions by transactionViewModel.allTransactions.collectAsState(initial = emptyList())
             ReportsScreen(
-
-                customers =
-                    customers,
-
-                transactions =
-                    transactions,
-
+                customers = customers,
+                transactions = transactions,
                 onCustomerClick = { customerId ->
-
-                    navController.navigate(
-
-                        Screen.CustomerDetails
-                            .createRoute(
-                                customerId
-                            )
-                    )
+                    navController.navigate(Screen.CustomerDetails.createRoute(customerId))
                 }
             )
         }
 
-
-        // ==================================================
-        // BACKUP & RESTORE
-        // ==================================================
-
-        composable(
-            Screen.Backup.route
-        ) {
-
+        composable(Screen.Backup.route) {
             BackupRestoreScreen(
-
-                backupManager =
-                    backupManager,
-
-                onRestoreBackup = {
-
-                    navController.navigate(
-                        "restore_backup"
-                    )
-                }
+                backupManager = backupManager,
+                onRestoreBackup = { navController.navigate("restore_backup") }
             )
         }
 
-
-        // ==================================================
-        // RESTORE BACKUP
-        // ==================================================
-
-        composable(
-            "restore_backup"
-        ) {
-
+        composable("restore_backup") {
             RestoreBackupScreen(
-
-                backupManager =
-                    backupManager,
-
-                onFinished = {
-
-                    navController.popBackStack()
-                }
+                backupManager = backupManager,
+                onFinished = { navController.popBackStack() }
             )
         }
 
-
-        // ==================================================
-        // ADD CUSTOMER
-        // ==================================================
-
-        composable(
-            Screen.AddCustomer.route
-        ) {
-
+        composable(Screen.AddCustomer.route) {
             AddCustomerScreen(
-
-                viewModel =
-                    customerViewModel,
-
-                onSaved = {
-
-                    navController.popBackStack()
-                }
+                viewModel = customerViewModel,
+                onSaved = { navController.popBackStack() }
             )
         }
 
-
-        // ==================================================
-        // CUSTOMER LIST
-        // ==================================================
-
-        composable(
-            Screen.CustomerList.route
-        ) {
-
+        composable(Screen.CustomerList.route) {
             CustomerListScreen(
-
-                navController =
-                    navController,
-
-                viewModel =
-                    customerViewModel
+                navController = navController,
+                viewModel = customerViewModel
             )
         }
 
-
-        // ==================================================
-        // CUSTOMER DETAILS
-        // ==================================================
-
         composable(
-
-            route =
-                Screen.CustomerDetails.route,
-
-            arguments =
-                listOf(
-
-                    navArgument(
-                        "customerId"
-                    ) {
-
-                        type =
-                            NavType.IntType
-                    }
-                )
-
+            route = Screen.CustomerDetails.route,
+            arguments = listOf(navArgument("customerId") { type = NavType.IntType })
         ) { backStackEntry ->
-
-            val customerId =
-                backStackEntry
-                    .arguments
-                    ?.getInt(
-                        "customerId"
-                    )
-                    ?: 0
-
-
-            // ==================================================
-            // CUSTOMER
-            // ==================================================
-
-            val customer by
-            customerViewModel
-                .getCustomerById(
-                    customerId
-                )
-                .collectAsState(
-                    initial = null
-                )
-
-
-            // ==================================================
-            // CUSTOMER TRANSACTIONS
-            // ==================================================
-
-            val transactions by
-            transactionViewModel
-                .getTransactionsByCustomer(
-                    customerId
-                )
-                .collectAsState(
-                    initial = emptyList()
-                )
-
+            val customerId = backStackEntry.arguments?.getInt("customerId") ?: 0
+            val customer by customerViewModel.getCustomerById(customerId).collectAsState(initial = null)
+            val transactions by transactionViewModel.getTransactionsByCustomer(customerId).collectAsState(initial = emptyList())
 
             if (customer != null) {
-
                 CustomerDetailsScreen(
-
-                    customerName =
-                        customer!!.name,
-
-                    mobile =
-                        customer!!.mobile,
-
-                    address =
-                        customer!!.address,
-
-                    transactions =
-                        transactions,
-
-
-                    // ==================================================
-                    // ADD UDHAAR
-                    // ==================================================
-
+                    customerName = customer!!.name,
+                    mobile = customer!!.mobile,
+                    address = customer!!.address,
+                    transactions = transactions,
                     onAddUdhar = {
-
-                        navController.navigate(
-
-                            Screen.AddTransaction
-                                .createRoute(
-                                    customerId,
-                                    "UDHAR"
-                                )
-                        )
+                        navController.navigate(Screen.AddTransaction.createRoute(customerId, "UDHAR"))
                     },
-
-
-                    // ==================================================
-                    // ADD PAYMENT
-                    // ==================================================
-
                     onAddPayment = {
-
-                        navController.navigate(
-
-                            Screen.AddTransaction
-                                .createRoute(
-                                    customerId,
-                                    "PAYMENT"
-                                )
-                        )
+                        navController.navigate(Screen.AddTransaction.createRoute(customerId, "PAYMENT"))
                     },
-
-
-                    // ==================================================
-                    // EDIT CUSTOMER
-                    // ==================================================
-
                     onEditCustomer = {
-
-                        navController.navigate(
-
-                            Screen.EditCustomer
-                                .createRoute(
-                                    customerId
-                                )
-                        )
+                        navController.navigate(Screen.EditCustomer.createRoute(customerId))
                     },
-
-
-                    // ==================================================
-                    // DELETE CUSTOMER
-                    // ==================================================
-
                     onDeleteCustomer = {
-
-                        customerViewModel.delete(
-                            customer!!
-                        )
-
+                        customerViewModel.delete(customer!!)
                         navController.popBackStack()
                     },
-
-
-                    // ==================================================
-                    // EDIT TRANSACTION
-                    // ==================================================
-
-                    onEditTransaction = { transaction ->
-
-                        transactionViewModel.update(
-                            transaction
-                        )
-                    },
-
-
-                    // ==================================================
-                    // DELETE TRANSACTION
-                    // ==================================================
-
-                    onDeleteTransaction = { transaction ->
-
-                        transactionViewModel.delete(
-                            transaction
-                        )
-                    }
+                    onEditTransaction = { transaction -> transactionViewModel.update(transaction) },
+                    onDeleteTransaction = { transaction -> transactionViewModel.delete(transaction) }
                 )
-
             } else {
-
                 CircularProgressIndicator()
             }
         }
 
-
-        // ==================================================
-        // EDIT CUSTOMER
-        // ==================================================
-
         composable(
-
-            route =
-                Screen.EditCustomer.route,
-
-            arguments =
-                listOf(
-
-                    navArgument(
-                        "customerId"
-                    ) {
-
-                        type =
-                            NavType.IntType
-                    }
-                )
-
+            route = Screen.EditCustomer.route,
+            arguments = listOf(navArgument("customerId") { type = NavType.IntType })
         ) { backStackEntry ->
-
-            val customerId =
-                backStackEntry
-                    .arguments
-                    ?.getInt(
-                        "customerId"
-                    )
-                    ?: 0
-
-
-            val customer by
-            customerViewModel
-                .getCustomerById(
-                    customerId
-                )
-                .collectAsState(
-                    initial = null
-                )
-
+            val customerId = backStackEntry.arguments?.getInt("customerId") ?: 0
+            val customer by customerViewModel.getCustomerById(customerId).collectAsState(initial = null)
 
             if (customer != null) {
-
                 EditCustomerScreen(
-
-                    customer =
-                        customer!!,
-
-                    viewModel =
-                        customerViewModel,
-
-                    onSaved = {
-
-                        navController.popBackStack()
-                    }
+                    customer = customer!!,
+                    viewModel = customerViewModel,
+                    onSaved = { navController.popBackStack() }
                 )
-
             } else {
-
                 CircularProgressIndicator()
             }
         }
 
-
-        // ==================================================
-        // ADD TRANSACTION / PAYMENT
-        // ==================================================
-
         composable(
-
-            route =
-                Screen.AddTransaction.route,
-
-            arguments =
-                listOf(
-
-                    navArgument(
-                        "customerId"
-                    ) {
-
-                        type =
-                            NavType.IntType
-                    },
-
-                    navArgument(
-                        "type"
-                    ) {
-
-                        type =
-                            NavType.StringType
-                    }
-                )
-
+            route = Screen.AddTransaction.route,
+            arguments = listOf(
+                navArgument("customerId") { type = NavType.IntType },
+                navArgument("type") { type = NavType.StringType }
+            )
         ) { backStackEntry ->
+            val customerId = backStackEntry.arguments?.getInt("customerId") ?: 0
+            val type = backStackEntry.arguments?.getString("type") ?: "UDHAR"
+            val customer by customerViewModel.getCustomerById(customerId).collectAsState(initial = null)
+            val transactions by transactionViewModel.getTransactionsByCustomer(customerId).collectAsState(initial = emptyList())
+            val customerName = customer?.name ?: ""
+            val customerMobile = customer?.mobile ?: ""
 
-            val customerId =
-                backStackEntry
-                    .arguments
-                    ?.getInt(
-                        "customerId"
-                    )
-                    ?: 0
-
-
-            val type =
-                backStackEntry
-                    .arguments
-                    ?.getString(
-                        "type"
-                    )
-                    ?: "UDHAR"
-
-
-            // ==================================================
-            // CUSTOMER
-            // ==================================================
-
-            val customer by
-            customerViewModel
-                .getCustomerById(
-                    customerId
-                )
-                .collectAsState(
-                    initial = null
-                )
-
-
-            // ==================================================
-            // CUSTOMER TRANSACTIONS
-            // ==================================================
-
-            val transactions by
-            transactionViewModel
-                .getTransactionsByCustomer(
-                    customerId
-                )
-                .collectAsState(
-                    initial = emptyList()
-                )
-
-
-            val customerName =
-                customer?.name ?: ""
-
-            val customerMobile =
-                customer?.mobile ?: ""
-
-
-            // ==================================================
-            // PAYMENT
-            // ==================================================
-
-            if (
-                type.equals(
-                    "PAYMENT",
-                    ignoreCase = true
-                )
-            ) {
-
-                // ==================================================
-                // CURRENT BALANCE
-                // ==================================================
-
-                val currentBalance =
-                    transactions
-                        .fold(0.0) { balance, transaction ->
-
-                            when {
-
-                                transaction.type.equals(
-                                    "UDHAR",
-                                    ignoreCase = true
-                                ) -> {
-
-                                    balance +
-                                            transaction.amount
-                                }
-
-                                transaction.type.equals(
-                                    "PAYMENT",
-                                    ignoreCase = true
-                                ) -> {
-
-                                    balance -
-                                            transaction.amount
-                                }
-
-                                else -> {
-
-                                    balance
-                                }
-                            }
-                        }
-                        .coerceAtLeast(0.0)
-
-
-                // ==================================================
-                // PAYMENT SCREEN
-                // ==================================================
+            if (type.equals("PAYMENT", ignoreCase = true)) {
+                val currentBalance = transactions.fold(0.0) { balance, transaction ->
+                    when {
+                        transaction.type.equals("UDHAR", ignoreCase = true) -> balance + transaction.amount
+                        transaction.type.equals("PAYMENT", ignoreCase = true) -> balance - transaction.amount
+                        else -> balance
+                    }
+                }.coerceAtLeast(0.0)
 
                 PaymentScreen(
-
-                    customerId =
-                        customerId,
-
-                    customerName =
-                        customerName,
-
-                    customerMobile =
-                        customerMobile,
-
-                    currentBalance =
-                        currentBalance,
-
-                    transactionViewModel =
-                        transactionViewModel,
-
-                    onSaved = {
-
-                        navController.popBackStack()
-                    }
+                    customerId = customerId,
+                    customerName = customerName,
+                    customerMobile = customerMobile,
+                    currentBalance = currentBalance,
+                    transactionViewModel = transactionViewModel,
+                    onSaved = { navController.popBackStack() }
                 )
-
             } else {
-
-                // ==================================================
-                // ADD UDHAAR
-                // ==================================================
-
                 AddTransactionScreen(
-
-                    customerId =
-                        customerId,
-
-                    customerName =
-                        customerName,
-
-                    customerMobile =
-                        customerMobile,
-
-                    initialType =
-                        type,
-
-                    viewModel =
-                        transactionViewModel,
-
-                    onSaved = {
-
-                        navController.popBackStack()
-                    }
+                    customerId = customerId,
+                    customerName = customerName,
+                    customerMobile = customerMobile,
+                    initialType = type,
+                    viewModel = transactionViewModel,
+                    onSaved = { navController.popBackStack() }
                 )
             }
         }
